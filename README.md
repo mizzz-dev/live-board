@@ -15,8 +15,71 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-MVP実装前の要件・アーキテクチャ確定フェーズです。
-初期PRでは、実装を安全に分割するためのプロダクト要件、技術設計、セキュリティ境界、ロードマップを追加します。
+M0「リポジトリ・デスクトップ基盤」の初期実装です。
+Electron Editor、OBS Overlay、共有Domain、共有設定、CI、E2E Smoke Testの土台を追加しています。
+
+描画、OBS WebSocket同期、永続化、画像処理は後続Issueで実装します。
+
+## 必要環境
+
+- Node.js 22.12以降
+- pnpm 11.15.1
+- Windows 11を主要な開発・配布対象とする
+
+## セットアップ
+
+```bash
+corepack enable
+corepack prepare pnpm@11.15.1 --activate
+pnpm install
+```
+
+## ローカル起動
+
+### Desktop Editor
+
+```bash
+pnpm dev:desktop
+```
+
+Vite Renderer、Electron Main/PreloadのTypeScript監視、Electronを同時起動します。
+RendererからNode.js APIへ直接アクセスできない構成です。
+
+### OBS Overlay単体
+
+```bash
+pnpm dev:overlay
+```
+
+開発用URLは`http://127.0.0.1:5174`です。
+現時点では接続待機画面のみで、ローカルOBSブリッジは`IVR-238`と`IVR-240`で実装します。
+
+## 品質確認
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、初期画面を確認します。
+Electronプロセス自体の自動起動試験は配布設定と合わせて後続で追加します。
+
+## モノレポ構成
+
+```text
+apps/
+  desktop/          Electron Main / Preload / React Editor
+  overlay/          OBS Browser Source向けReactアプリ
+packages/
+  config/           共有TypeScript設定
+  domain/           UI・Electronへ依存しないDomain Model
+```
+
+将来追加するパッケージは、[アーキテクチャ](docs/architecture.md)の責務境界に従います。
 
 ## ドキュメント
 
@@ -35,7 +98,7 @@ MVP実装前の要件・アーキテクチャ確定フェーズです。
 - Local storage: SQLite または IndexedDB、アセットはファイル分離
 - OBS bridge: `127.0.0.1` 限定 HTTP + WebSocket
 - Rendering: MVPは Canvas 2D、負荷計測後に OffscreenCanvas / WebGL を段階導入
-- Testing: Vitest + React Testing Library + Playwright
+- Testing: Vitest + Playwright
 
 ## MVPの主要機能
 
