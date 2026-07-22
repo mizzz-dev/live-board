@@ -4,6 +4,10 @@ export type BroadcastBackground =
   | { type: 'transparent' }
   | { type: 'color'; value: string };
 
+export type PageTransition =
+  | { type: 'none'; durationMs: 0 }
+  | { type: 'fade'; durationMs: number };
+
 export interface BroadcastSnapshot {
   schemaVersion: typeof BROADCAST_SNAPSHOT_SCHEMA_VERSION;
   projectId: string;
@@ -26,7 +30,12 @@ export type ObsBridgeClientMessage =
 
 export type ObsBridgeServerMessage =
   | { type: 'pong'; timestamp: number }
-  | { type: 'snapshot'; snapshot: BroadcastSnapshot };
+  | { type: 'snapshot'; snapshot: BroadcastSnapshot }
+  | {
+      type: 'page.changed';
+      snapshot: BroadcastSnapshot;
+      transition: PageTransition;
+    };
 
 export function parseBroadcastSnapshot(input: unknown): BroadcastSnapshot {
   if (!isRecord(input)) {
@@ -71,6 +80,28 @@ export function parseBroadcastSnapshot(input: unknown): BroadcastSnapshot {
     },
     layers: [],
   };
+}
+
+export function parsePageTransition(input: unknown): PageTransition {
+  if (!isRecord(input) || typeof input.type !== 'string') {
+    throw new Error('OBS_PROTOCOL_INVALID_PAGE_TRANSITION');
+  }
+
+  if (input.type === 'none' && input.durationMs === 0) {
+    return { type: 'none', durationMs: 0 };
+  }
+
+  if (
+    input.type === 'fade' &&
+    typeof input.durationMs === 'number' &&
+    Number.isInteger(input.durationMs) &&
+    input.durationMs >= 50 &&
+    input.durationMs <= 5_000
+  ) {
+    return { type: 'fade', durationMs: input.durationMs };
+  }
+
+  throw new Error('OBS_PROTOCOL_INVALID_PAGE_TRANSITION');
 }
 
 export function parseObsBridgeClientMessage(input: unknown): ObsBridgeClientMessage {
@@ -120,6 +151,14 @@ export function parseObsBridgeServerMessage(input: unknown): ObsBridgeServerMess
     };
   }
 
+  if (input.type === 'page.changed') {
+    return {
+      type: 'page.changed',
+      snapshot: parseBroadcastSnapshot(input.snapshot),
+      transition: parsePageTransition(input.transition),
+    };
+  }
+
   throw new Error('OBS_PROTOCOL_UNKNOWN_SERVER_MESSAGE');
 }
 
@@ -133,7 +172,11 @@ function isEntityId(value: unknown): value is string {
 }
 
 function isRevision(value: unknown): value is number {
-  return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0;
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  );
 }
 
 function isNonNegativeFiniteNumber(value: unknown): value is number {
@@ -149,11 +192,21 @@ function isIsoTimestamp(value: unknown): value is string {
 }
 
 function isCanvasDimension(value: unknown): value is number {
-  return Number.isInteger(value) && typeof value === 'number' && value >= 1 && value <= 32768;
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 32768
+  );
 }
 
 function isDpi(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 2400;
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 1 &&
+    value <= 2400
+  );
 }
 
 function isBackground(value: unknown): value is BroadcastBackground {
