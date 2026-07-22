@@ -1,4 +1,8 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
+import {
+  SECURITY_STATUS_CHANNEL,
+  type SecurityStatus,
+} from './contracts.js';
 
 export interface RuntimeInfo {
   platform: NodeJS.Platform;
@@ -20,5 +24,7 @@ contextBridge.exposeInMainWorld(
   'liveBoard',
   Object.freeze({
     getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
+    getSecurityStatus: (requestId: string): Promise<SecurityStatus> =>
+      ipcRenderer.invoke(SECURITY_STATUS_CHANNEL, { requestId }) as Promise<SecurityStatus>,
   }),
 );

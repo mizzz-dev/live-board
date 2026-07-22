@@ -1,4 +1,5 @@
 import { createEmptyWorkspace } from '@live-board/domain';
+import { useEffect, useState } from 'react';
 
 const workspace = createEmptyWorkspace('local-workspace');
 const project = workspace.projects[0];
@@ -6,6 +7,46 @@ const page = project?.pages[0];
 
 export function App() {
   const runtime = window.liveBoard?.getRuntimeInfo();
+  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(
+    null,
+  );
+  const [securityStatusError, setSecurityStatusError] = useState(false);
+
+  useEffect(() => {
+    const liveBoardApi = window.liveBoard;
+
+    if (liveBoardApi === undefined) {
+      return;
+    }
+
+    let active = true;
+    const requestId = globalThis.crypto.randomUUID();
+
+    void liveBoardApi
+      .getSecurityStatus(requestId)
+      .then((status) => {
+        if (active && status.requestId === requestId) {
+          setSecurityStatus(status);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSecurityStatusError(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const obsBridgeLabel = securityStatusError
+    ? 'OBSブリッジ: 起動確認失敗'
+    : securityStatus === null
+      ? runtime === undefined
+        ? 'OBSブリッジ: Browser Preview'
+        : 'OBSブリッジ: 起動確認中'
+      : `OBSブリッジ: ${securityStatus.obsBridge.host}:${securityStatus.obsBridge.port}`;
 
   return (
     <div className="app-shell">
@@ -16,7 +57,7 @@ export function App() {
         </div>
         <div className="topbar-actions">
           <span className="status-dot" aria-hidden="true" />
-          <span>OBS: 未接続</span>
+          <span>{obsBridgeLabel}</span>
           <button type="button">配信ページを固定</button>
         </div>
       </header>
@@ -60,6 +101,11 @@ export function App() {
             {runtime
               ? `${runtime.platform} / Electron ${runtime.versions.electron}`
               : 'Browser Preview'}
+          </span>
+          <span>
+            {securityStatus === null
+              ? 'Security: 確認中'
+              : `Security: sandbox / 接続 ${securityStatus.obsBridge.connectionCount}`}
           </span>
         </footer>
       </main>
