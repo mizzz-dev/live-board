@@ -1,0 +1,32 @@
+name: Apply AppV2 Persistence Patch
+
+on:
+  push:
+    branches:
+      - feat/ivr-244-liveboard-persistence-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-244-liveboard-persistence-recovery
+          fetch-depth: 0
+      - name: Apply focused patch
+        run: node .github/scripts/patch-appv2.mjs
+      - name: Commit patch when needed
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src/AppV2.tsx
+          git commit -m "Desktopへ保存・復元UIを接続"
+          git push origin HEAD:feat/ivr-244-liveboard-persistence-recovery
