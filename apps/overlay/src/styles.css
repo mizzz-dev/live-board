@@ -31,8 +31,16 @@ body,
 }
 
 .broadcast-output {
+  position: relative;
   height: 100vh;
   place-items: stretch;
+}
+
+.broadcast-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
 }
 
 .page-transition-fade {

@@ -17,7 +17,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: 'http://127.0.0.1:4173',
       },
-      testMatch: /desktop\.spec\.ts/,
+      testMatch: /desktop.*\.spec\.ts/,
     },
     {
       name: 'overlay',

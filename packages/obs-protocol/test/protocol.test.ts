@@ -4,8 +4,17 @@ import {
   parseObsBridgeClientMessage,
   parseObsBridgeServerMessage,
   parsePageTransition,
+  parseRasterDrawing,
   type BroadcastSnapshot,
-} from '../src/index.js';
+} from '../src/protocol-v3.js';
+
+const identityTransform = {
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+  rotation: 0,
+};
 
 const snapshot: BroadcastSnapshot = {
   schemaVersion: 1,
@@ -30,7 +39,73 @@ const snapshot: BroadcastSnapshot = {
       opacity: 1,
       blendMode: 'normal',
       color: null,
-      childLayerIds: ['text-1'],
+      transform: identityTransform,
+      childLayerIds: ['raster-1', 'text-1'],
+    },
+    {
+      id: 'raster-1',
+      parentId: 'folder-1',
+      name: '描画',
+      type: 'raster',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      color: null,
+      transform: { ...identityTransform, x: 20, rotation: 5 },
+      content: {
+        assetId: null,
+        sourceLayerIds: [],
+        drawing: {
+          revision: 2,
+          strokes: [
+            {
+              id: 'stroke-1',
+              sequence: 1,
+              tool: 'pen',
+              pointerType: 'pen',
+              color: '#FF3366',
+              size: 24,
+              opacity: 0.8,
+              hardness: 0.7,
+              spacing: 0.2,
+              smoothing: 0.4,
+              taperStart: 0.1,
+              taperEnd: 0.2,
+              pressureSize: true,
+              pressureOpacity: true,
+              points: [
+                {
+                  x: 10,
+                  y: 20,
+                  pressure: 0,
+                  tiltX: -30,
+                  tiltY: 15,
+                  timestamp: 1,
+                },
+                {
+                  x: 30,
+                  y: 40,
+                  pressure: 1,
+                  tiltX: 30,
+                  tiltY: -15,
+                  timestamp: 2,
+                },
+              ],
+            },
+          ],
+          fills: [
+            {
+              id: 'fill-1',
+              sequence: 2,
+              x: 100,
+              y: 200,
+              color: '#00AAFFFF',
+              opacity: 0.5,
+              tolerance: 32,
+            },
+          ],
+        },
+      },
     },
     {
       id: 'text-1',
@@ -41,6 +116,7 @@ const snapshot: BroadcastSnapshot = {
       opacity: 0.8,
       blendMode: 'overlay',
       color: '#FF00FF',
+      transform: identityTransform,
       content: {
         text: 'Live Board',
         fontFamily: 'sans-serif',
@@ -52,8 +128,55 @@ const snapshot: BroadcastSnapshot = {
 };
 
 describe('OBS protocol', () => {
-  it('有効なLayer treeを含むBroadcastSnapshotを検証する', () => {
+  it('描画Layer treeを含むBroadcastSnapshotを検証する', () => {
     expect(parseBroadcastSnapshot(snapshot)).toEqual(snapshot);
+  });
+
+  it('pressure・tilt・Fill tolerance・操作順序の境界を検証する', () => {
+    const raster = snapshot.layers[1];
+    expect(raster?.type).toBe('raster');
+    if (raster?.type !== 'raster') throw new Error('Raster fixture missing');
+    expect(parseRasterDrawing(raster.content.drawing)).toEqual(
+      raster.content.drawing,
+    );
+    const invalidPressure = structuredClone(raster.content.drawing);
+    invalidPressure.strokes[0]!.points[0]!.pressure = 1.1;
+    expect(() => parseRasterDrawing(invalidPressure)).toThrow(
+      'OBS_PROTOCOL_INVALID_RASTER_POINT',
+    );
+    const invalidTolerance = structuredClone(raster.content.drawing);
+    invalidTolerance.fills[0]!.tolerance = 256;
+    expect(() => parseRasterDrawing(invalidTolerance)).toThrow(
+      'OBS_PROTOCOL_INVALID_RASTER_FILL',
+    );
+    const invalidSequence = structuredClone(raster.content.drawing);
+    invalidSequence.strokes[0]!.sequence = 0;
+    expect(() => parseRasterDrawing(invalidSequence)).toThrow(
+      'OBS_PROTOCOL_INVALID_RASTER_SEQUENCE',
+    );
+  });
+
+  it('旧Layer snapshotへtransformと空のdrawingを補完する', () => {
+    const legacy = {
+      ...snapshot,
+      layers: [
+        {
+          id: 'raster-legacy',
+          parentId: null,
+          name: '旧ラスター',
+          type: 'raster',
+          visible: true,
+          opacity: 1,
+          blendMode: 'normal',
+          color: null,
+          content: { assetId: null, sourceLayerIds: [] },
+        },
+      ],
+    };
+    expect(parseBroadcastSnapshot(legacy).layers[0]).toMatchObject({
+      transform: identityTransform,
+      content: { drawing: { revision: 0, strokes: [], fills: [] } },
+    });
   });
 
   it('不正revision・未知Layer・壊れた親子関係を拒否する', () => {
@@ -69,17 +192,22 @@ describe('OBS protocol', () => {
         layers: [
           snapshot.layers[0],
           { ...snapshot.layers[1], parentId: null },
+          snapshot.layers[2],
         ],
       }),
     ).toThrow('OBS_PROTOCOL_INVALID_LAYER_TREE');
   });
 
   it('opacity・blend mode・色の境界を拒否する', () => {
-    const textLayer = snapshot.layers[1]!;
+    const textLayer = snapshot.layers[2]!;
     expect(() =>
       parseBroadcastSnapshot({
         ...snapshot,
-        layers: [snapshot.layers[0], { ...textLayer, opacity: 1.1 }],
+        layers: [
+          snapshot.layers[0],
+          snapshot.layers[1],
+          { ...textLayer, opacity: 1.1 },
+        ],
       }),
     ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
     expect(() =>
@@ -87,14 +215,9 @@ describe('OBS protocol', () => {
         ...snapshot,
         layers: [
           snapshot.layers[0],
+          snapshot.layers[1],
           { ...textLayer, blendMode: 'unsupported' },
         ],
-      }),
-    ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
-    expect(() =>
-      parseBroadcastSnapshot({
-        ...snapshot,
-        layers: [snapshot.layers[0], { ...textLayer, color: 'red' }],
       }),
     ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
   });

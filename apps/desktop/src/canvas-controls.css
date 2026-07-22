@@ -1,0 +1,78 @@
+.app-shell {
+  height: 100vh;
+  min-height: 0;
+}
+
+.workspace {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: 44px auto auto minmax(120px, 1fr) 30px;
+}
+
+.canvas-toolbar,
+.viewport-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid #343948;
+  background: #20242f;
+  overflow-x: auto;
+}
+
+.canvas-toolbar label,
+.viewport-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #d6dae5;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.canvas-toolbar input[type='range'] {
+  width: 88px;
+}
+
+.canvas-toolbar input[type='color'] {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #4b5265;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.canvas-toolbar button,
+.viewport-toolbar button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #454c60;
+  border-radius: 5px;
+  background: #2b3040;
+  color: #eef1f7;
+}
+
+.canvas-toolbar button:hover,
+.viewport-toolbar button:hover,
+.viewport-toolbar button[aria-pressed='true'] {
+  border-color: #7c8cff;
+  background: #3b4260;
+}
+
+.canvas-stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.statusbar {
+  justify-content: flex-start;
+  overflow-x: auto;
+  white-space: nowrap;
+}

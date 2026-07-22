@@ -1,35 +1,100 @@
 import {
+  DEFAULT_CANVAS_VIEWPORT,
+  type BrushSettings,
+  type CanvasToolId,
+  type CanvasToolResult,
+  type CanvasViewport,
+  type RenderMetrics,
+  type SnapSettings,
+} from '@live-board/canvas-engine';
+import {
   DomainError,
+  canRedoCanvas,
   canRedoProject,
+  canUndoCanvas,
   canUndoProject,
   cloneLayer,
+  createAddLayerCommand,
   createAddPageCommand,
+  createAddRasterFillCommand,
+  createAddRasterStrokeCommand,
   createBroadcastSnapshot,
+  createCanvasWorkspaceCommandState,
+  createClearRasterCommand,
   createDeletePageCommand,
   createDuplicatePageCommand,
   createEmptyWorkspace,
-  createLayerWorkspaceCommandState,
+  createLayer,
   createMovePageCommand,
   createPage,
+  createPageRenderSnapshot,
   createSelectBroadcastPageCommand,
   createSelectEditPageCommand,
-  dispatchProjectCommandWithLayerHistory,
+  dispatchCanvasCommand,
+  dispatchLayerCommandWithCanvasHistory,
+  dispatchProjectCommandWithCanvasHistory,
+  getCanvasHistory,
+  getCanvasHistoryBytes,
   getLayerDocument,
   getProjectHistory,
-  redoProjectCommandWithLayerHistory,
-  undoProjectCommandWithLayerHistory,
+  redoCanvasCommand,
+  redoProjectCommandWithCanvasHistory,
+  undoCanvasCommand,
+  undoProjectCommandWithCanvasHistory,
+  type CanvasWorkspaceCommandState,
   type Layer,
   type LayerDocument,
+  type LayerWorkspaceCommandState,
   type Page,
   type ProjectCommand,
 } from '@live-board/domain';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import { CanvasSurface } from './CanvasSurface';
 import { LayerPanel } from './LayerPanel';
+import './canvas-controls.css';
 import './page-controls.css';
 
-const initialCommandState = createLayerWorkspaceCommandState(
+const initialCommandState = createCanvasWorkspaceCommandState(
   createEmptyWorkspace('local-workspace'),
 );
+
+const DEFAULT_BRUSH: BrushSettings = {
+  color: '#FF3366',
+  size: 24,
+  opacity: 1,
+  hardness: 0.9,
+  spacing: 0.15,
+  smoothing: 0.35,
+  taperStart: 0,
+  taperEnd: 0,
+  pressureSize: true,
+  pressureOpacity: false,
+  fillTolerance: 24,
+};
+
+const DEFAULT_SNAP: SnapSettings = {
+  enabled: false,
+  gridSize: 50,
+  guideX: [960],
+  guideY: [540],
+  threshold: 8,
+};
+
+const TOOL_BUTTONS: Array<{ id: CanvasToolId; label: string }> = [
+  { id: 'pen', label: 'ペン' },
+  { id: 'eraser', label: '消しゴム' },
+  { id: 'bucket', label: 'バケツ' },
+  { id: 'eyedropper', label: 'スポイト' },
+  { id: 'pan', label: '手のひら' },
+];
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 
@@ -42,6 +107,13 @@ export function App() {
   const [broadcastRevision, setBroadcastRevision] = useState<number | null>(null);
   const [broadcastSyncError, setBroadcastSyncError] = useState(false);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+  const [toolId, setToolId] = useState<CanvasToolId>('pen');
+  const [brush, setBrush] = useState<BrushSettings>(DEFAULT_BRUSH);
+  const [viewport, setViewport] = useState<CanvasViewport>(DEFAULT_CANVAS_VIEWPORT);
+  const [snap, setSnap] = useState<SnapSettings>(DEFAULT_SNAP);
+  const [gridVisible, setGridVisible] = useState(false);
+  const [guidesVisible, setGuidesVisible] = useState(true);
+  const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
   const nextBroadcastRevisionRef = useRef(1);
 
   const workspace = commandState.workspace;
@@ -58,12 +130,26 @@ export function App() {
     ) ?? project.pages[0]!;
   const editPageIndex = project.pages.findIndex((page) => page.id === editPage.id);
   const projectHistory = getProjectHistory(commandState, project.id);
+  const canvasHistory = getCanvasHistory(commandState, editPage.id);
+  const editLayerSignature = JSON.stringify(getLayerDocument(editPage));
   const broadcastLayerSignature = JSON.stringify(getLayerDocument(broadcastPage));
+  const editSnapshot = useMemo(
+    () => createPageRenderSnapshot(editPage, project.id),
+    [
+      editPage.id,
+      editPage.name,
+      editPage.width,
+      editPage.height,
+      editPage.dpi,
+      editPage.transparent,
+      editLayerSignature,
+      project.id,
+    ],
+  );
 
   useEffect(() => {
     const liveBoardApi = window.liveBoard;
     if (liveBoardApi === undefined) return;
-
     let active = true;
     const requestId = globalThis.crypto.randomUUID();
     void liveBoardApi
@@ -78,7 +164,6 @@ export function App() {
       .catch(() => {
         if (active) setSecurityStatusError(true);
       });
-
     return () => {
       active = false;
     };
@@ -87,17 +172,11 @@ export function App() {
   useEffect(() => {
     const liveBoardApi = window.liveBoard;
     if (liveBoardApi === undefined || securityStatus === null) return;
-
     let active = true;
     const revision = nextBroadcastRevisionRef.current;
     nextBroadcastRevisionRef.current += 1;
     const requestId = globalThis.crypto.randomUUID();
-    const snapshot = createBroadcastSnapshot(
-      workspace,
-      project.id,
-      revision,
-    );
-
+    const snapshot = createBroadcastSnapshot(workspace, project.id, revision);
     void liveBoardApi
       .publishBroadcastSnapshot(requestId, snapshot)
       .then((response) => {
@@ -123,7 +202,6 @@ export function App() {
             if (active) setSecurityStatusError(true);
           });
       });
-
     return () => {
       active = false;
     };
@@ -139,6 +217,31 @@ export function App() {
     broadcastLayerSignature,
   ]);
 
+  const onRenderMetrics = useCallback((metrics: RenderMetrics) => {
+    setRenderMetrics(metrics);
+  }, []);
+
+  const handleToolResult = useCallback(
+    (result: Exclude<CanvasToolResult, null>) => {
+      if (result.type === 'color') {
+        setBrush((current) => ({ ...current, color: result.color }));
+        return;
+      }
+      if (result.type === 'pan') return;
+      try {
+        setCommandState((current) =>
+          applyDrawingResult(current, project.id, editPage.id, result),
+        );
+        setDomainError(null);
+      } catch (error: unknown) {
+        setDomainError(
+          error instanceof Error ? error.message : '描画操作に失敗しました',
+        );
+      }
+    },
+    [project.id, editPage.id],
+  );
+
   const obsBridgeLabel = securityStatusError
     ? 'OBSブリッジ: 起動確認失敗'
     : securityStatus === null
@@ -146,7 +249,6 @@ export function App() {
         ? 'OBSブリッジ: Browser Preview'
         : 'OBSブリッジ: 起動確認中'
       : `OBSブリッジ: ${securityStatus.obsBridge.host}:${securityStatus.obsBridge.port}`;
-
   const broadcastSyncLabel = broadcastSyncError
     ? 'OBS同期: 再同期中'
     : broadcastRevision === null
@@ -158,7 +260,7 @@ export function App() {
   function executeCommand(command: ProjectCommand): void {
     try {
       setCommandState((currentState) =>
-        dispatchProjectCommandWithLayerHistory(currentState, command),
+        dispatchProjectCommandWithCanvasHistory(currentState, command),
       );
       setDomainError(null);
     } catch (error: unknown) {
@@ -197,7 +299,6 @@ export function App() {
       }),
       layerDocument: duplicateLayerDocument(editPage, pageId, timestamp),
     };
-
     executeCommand(
       createDuplicatePageCommand(
         project.id,
@@ -211,7 +312,6 @@ export function App() {
   function copyObsSourceUrl(): void {
     const liveBoardApi = window.liveBoard;
     if (liveBoardApi === undefined) return;
-
     const requestId = globalThis.crypto.randomUUID();
     setCopyStatus('idle');
     void liveBoardApi
@@ -223,6 +323,34 @@ export function App() {
       })
       .catch(() => setCopyStatus('error'));
   }
+
+  function clearRaster(): void {
+    const activeLayerId = getLayerDocument(editPage).activeLayerId;
+    if (activeLayerId === null) {
+      setDomainError('消去するラスターLayerを選択してください');
+      return;
+    }
+    try {
+      setCommandState((current) =>
+        dispatchCanvasCommand(
+          current,
+          createClearRasterCommand(
+            project.id,
+            editPage.id,
+            activeLayerId,
+            createCommandMetadata('raster-clear'),
+          ),
+        ),
+      );
+      setDomainError(null);
+    } catch (error: unknown) {
+      setDomainError(error instanceof Error ? error.message : '全消去に失敗しました');
+    }
+  }
+
+  const layerPanelSetter = setCommandState as unknown as Dispatch<
+    SetStateAction<LayerWorkspaceCommandState>
+  >;
 
   return (
     <div className="app-shell">
@@ -264,18 +392,18 @@ export function App() {
         </div>
       </header>
 
-      <aside className="tool-rail" aria-label="ツール">
-        {['ペン', '消しゴム', 'バケツ', 'スポイト', '文字', '図形'].map(
-          (tool, index) => (
-            <button
-              key={tool}
-              type="button"
-              className={index === 0 ? 'active' : undefined}
-            >
-              {tool}
-            </button>
-          ),
-        )}
+      <aside className="tool-rail" aria-label="描画ツール">
+        {TOOL_BUTTONS.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            className={toolId === tool.id ? 'active' : undefined}
+            aria-pressed={toolId === tool.id}
+            onClick={() => setToolId(tool.id)}
+          >
+            {tool.label}
+          </button>
+        ))}
       </aside>
 
       <main className="workspace">
@@ -292,33 +420,208 @@ export function App() {
           ))}
         </div>
 
+        <div className="canvas-toolbar" aria-label="描画設定">
+          <label>
+            色
+            <input
+              aria-label="ブラシ色"
+              type="color"
+              value={brush.color.slice(0, 7)}
+              onChange={(event) =>
+                setBrush((current) => ({ ...current, color: event.currentTarget.value }))
+              }
+            />
+          </label>
+          <label>
+            サイズ {brush.size}px
+            <input
+              aria-label="ブラシサイズ"
+              type="range"
+              min="1"
+              max="200"
+              value={brush.size}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  size: Number(event.currentTarget.value),
+                }))
+              }
+            />
+          </label>
+          <label>
+            不透明度 {Math.round(brush.opacity * 100)}%
+            <input
+              aria-label="ブラシ不透明度"
+              type="range"
+              min="1"
+              max="100"
+              value={Math.round(brush.opacity * 100)}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  opacity: Number(event.currentTarget.value) / 100,
+                }))
+              }
+            />
+          </label>
+          <label>
+            硬さ {Math.round(brush.hardness * 100)}%
+            <input
+              aria-label="ブラシ硬さ"
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(brush.hardness * 100)}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  hardness: Number(event.currentTarget.value) / 100,
+                }))
+              }
+            />
+          </label>
+          <label>
+            手ぶれ補正 {Math.round(brush.smoothing * 100)}%
+            <input
+              aria-label="手ぶれ補正"
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(brush.smoothing * 100)}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  smoothing: Number(event.currentTarget.value) / 100,
+                }))
+              }
+            />
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={brush.pressureSize}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  pressureSize: event.currentTarget.checked,
+                }))
+              }
+            />
+            筆圧でサイズ
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={brush.pressureOpacity}
+              onChange={(event) =>
+                setBrush((current) => ({
+                  ...current,
+                  pressureOpacity: event.currentTarget.checked,
+                }))
+              }
+            />
+            筆圧で濃度
+          </label>
+          <button type="button" onClick={clearRaster}>Layer全消去</button>
+        </div>
+
+        <div className="viewport-toolbar" aria-label="キャンバス表示設定">
+          <button
+            type="button"
+            onClick={() => setViewport((current) => ({ ...current, zoom: Math.max(0.05, current.zoom / 1.25) }))}
+          >
+            縮小
+          </button>
+          <strong>{Math.round(viewport.zoom * 100)}%</strong>
+          <button
+            type="button"
+            onClick={() => setViewport((current) => ({ ...current, zoom: Math.min(32, current.zoom * 1.25) }))}
+          >
+            拡大
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewport((current) => ({ ...current, rotation: current.rotation - 15 }))}
+          >
+            左回転
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewport((current) => ({ ...current, rotation: current.rotation + 15 }))}
+          >
+            右回転
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewport.flipX}
+            onClick={() => setViewport((current) => ({ ...current, flipX: !current.flipX }))}
+          >
+            左右反転
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewport(DEFAULT_CANVAS_VIEWPORT)}
+          >
+            表示リセット
+          </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={gridVisible}
+              onChange={(event) => setGridVisible(event.currentTarget.checked)}
+            />
+            グリッド
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={guidesVisible}
+              onChange={(event) => setGuidesVisible(event.currentTarget.checked)}
+            />
+            ガイド
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={snap.enabled}
+              onChange={(event) =>
+                setSnap((current) => ({ ...current, enabled: event.currentTarget.checked }))
+              }
+            />
+            スナップ
+          </label>
+        </div>
+
         <section className="canvas-stage" aria-label="キャンバス">
-          <div className="canvas-placeholder">
-            <span>{editPage.name}</span>
-            <strong>
-              {editPage.width} × {editPage.height}
-            </strong>
-            <small>キャンバス準備完了 / 描画エンジンはIVR-242で実装します</small>
-          </div>
+          <CanvasSurface
+            snapshot={editSnapshot}
+            toolId={toolId}
+            brush={brush}
+            viewport={viewport}
+            snap={snap}
+            guidesVisible={guidesVisible}
+            gridVisible={gridVisible}
+            onViewportChange={setViewport}
+            onToolResult={handleToolResult}
+            onRenderMetrics={onRenderMetrics}
+          />
         </section>
 
         <footer className="statusbar">
-          <span>ズーム 100%</span>
+          <span>ズーム {Math.round(viewport.zoom * 100)}%</span>
           <span>編集: {editPage.name}</span>
           <span>配信: {broadcastPage.name}</span>
+          <span>Page履歴: {projectHistory.past.length} / Redo {projectHistory.future.length}</span>
+          <span>描画履歴: {canvasHistory.past.length} / Redo {canvasHistory.future.length}</span>
+          <span>履歴メモリ: {formatBytes(getCanvasHistoryBytes(commandState, editPage.id))}</span>
           <span>
-            Page履歴: {projectHistory.past.length} / Redo {projectHistory.future.length}
+            描画: {renderMetrics === null ? '待機中' : `${renderMetrics.durationMs.toFixed(1)}ms / cache ${renderMetrics.cacheHits}:${renderMetrics.cacheMisses}`}
           </span>
           <span>{broadcastSyncLabel}</span>
           <span>
             {runtime
               ? `${runtime.platform} / Electron ${runtime.versions.electron}`
               : 'Browser Preview'}
-          </span>
-          <span>
-            {securityStatus === null
-              ? 'Security: 確認中'
-              : `Security: sandbox / 接続 ${securityStatus.obsBridge.connectionCount}`}
           </span>
         </footer>
       </main>
@@ -327,18 +630,15 @@ export function App() {
         <section>
           <div className="panel-heading">
             <h2>ページ</h2>
-            <button type="button" aria-label="ページを追加" onClick={addPage}>
-              ＋
-            </button>
+            <button type="button" aria-label="ページを追加" onClick={addPage}>＋</button>
           </div>
-
           <div className="history-actions" aria-label="ページ操作履歴">
             <button
               type="button"
               disabled={!canUndoProject(commandState, project.id)}
               onClick={() => {
-                setCommandState((currentState) =>
-                  undoProjectCommandWithLayerHistory(currentState, project.id),
+                setCommandState((current) =>
+                  undoProjectCommandWithCanvasHistory(current, project.id),
                 );
                 setDomainError(null);
               }}
@@ -349,8 +649,8 @@ export function App() {
               type="button"
               disabled={!canRedoProject(commandState, project.id)}
               onClick={() => {
-                setCommandState((currentState) =>
-                  redoProjectCommandWithLayerHistory(currentState, project.id),
+                setCommandState((current) =>
+                  redoProjectCommandWithCanvasHistory(current, project.id),
                 );
                 setDomainError(null);
               }}
@@ -358,7 +658,30 @@ export function App() {
               Pageをやり直す
             </button>
           </div>
-
+          <div className="history-actions" aria-label="描画操作履歴">
+            <button
+              type="button"
+              disabled={!canUndoCanvas(commandState, editPage.id)}
+              onClick={() =>
+                setCommandState((current) =>
+                  undoCanvasCommand(current, project.id, editPage.id),
+                )
+              }
+            >
+              描画を元に戻す
+            </button>
+            <button
+              type="button"
+              disabled={!canRedoCanvas(commandState, editPage.id)}
+              onClick={() =>
+                setCommandState((current) =>
+                  redoCanvasCommand(current, project.id, editPage.id),
+                )
+              }
+            >
+              描画をやり直す
+            </button>
+          </div>
           <div className="page-list">
             {project.pages.map((page) => {
               const isEditPage = page.id === project.activeEditPageId;
@@ -386,16 +709,13 @@ export function App() {
                       {[
                         isEditPage ? '編集中' : null,
                         isBroadcastPage ? '配信中' : null,
-                      ]
-                        .filter(Boolean)
-                        .join('・') || '待機中'}
+                      ].filter(Boolean).join('・') || '待機中'}
                     </small>
                   </span>
                 </button>
               );
             })}
           </div>
-
           <div className="page-actions" aria-label="選択ページの操作">
             <button type="button" onClick={duplicateEditPage}>複製</button>
             <button
@@ -452,16 +772,71 @@ export function App() {
           state={commandState}
           project={project}
           page={editPage}
-          setState={setCommandState}
+          setState={layerPanelSetter}
           onError={setDomainError}
         />
 
         <p className="domain-message" role="status" aria-live="polite">
-          {domainError ?? 'Page操作とLayer操作は別々の履歴へ記録されます'}
+          {domainError ?? 'Page・Layer・描画操作は別々の履歴へ記録されます'}
         </p>
       </aside>
     </div>
   );
+}
+
+function applyDrawingResult(
+  state: CanvasWorkspaceCommandState,
+  projectId: string,
+  pageId: string,
+  result: Extract<Exclude<CanvasToolResult, null>, { type: 'stroke' | 'fill' }>,
+): CanvasWorkspaceCommandState {
+  const project = state.workspace.projects.find((candidate) => candidate.id === projectId);
+  const page = project?.pages.find((candidate) => candidate.id === pageId);
+  if (project === undefined || page === undefined) throw new Error('描画ページが見つかりません');
+  const document = getLayerDocument(page);
+  const activeLayer = document.activeLayerId === null
+    ? null
+    : document.layers.find((layer) => layer.id === document.activeLayerId) ?? null;
+  let nextState = state;
+  let layerId = activeLayer?.type === 'raster' && !activeLayer.editLocked
+    ? activeLayer.id
+    : null;
+  if (layerId === null) {
+    layerId = createEntityId('layer-raster');
+    const layer = createLayer({
+      id: layerId,
+      pageId,
+      name: `描画 ${document.layers.length + 1}`,
+      type: 'raster',
+    });
+    nextState = dispatchLayerCommandWithCanvasHistory(
+      nextState,
+      createAddLayerCommand(
+        projectId,
+        pageId,
+        layer,
+        null,
+        document.rootLayerIds.length,
+        createCommandMetadata('auto-raster-add'),
+      ),
+    );
+  }
+  const command = result.type === 'stroke'
+    ? createAddRasterStrokeCommand(
+        projectId,
+        pageId,
+        layerId,
+        result.stroke,
+        createCommandMetadata('stroke-add'),
+      )
+    : createAddRasterFillCommand(
+        projectId,
+        pageId,
+        layerId,
+        result.fill,
+        createCommandMetadata('fill-add'),
+      );
+  return dispatchCanvasCommand(nextState, command);
 }
 
 function duplicateLayerDocument(
@@ -504,4 +879,10 @@ function createCommandMetadata(prefix: string) {
     commandId: `${prefix}:${globalThis.crypto.randomUUID()}`,
     createdAt: new Date().toISOString(),
   };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

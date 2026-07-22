@@ -1,3 +1,4 @@
+import { CanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
 import {
   parseObsBridgeServerMessage,
   type BroadcastSnapshot,
@@ -24,7 +25,16 @@ export function App() {
     useState<PageTransition>(NO_TRANSITION);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [revisionGapCount, setRevisionGapCount] = useState(0);
+  const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
   const latestRevisionRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef(new CanvasRenderer());
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || snapshot === null) return;
+    setRenderMetrics(rendererRef.current.render(canvas, snapshot));
+  }, [snapshot]);
 
   useEffect(() => {
     const webSocketUrl = createWebSocketUrl(window.location);
@@ -45,7 +55,6 @@ export function App() {
         window.clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
       }
-
       if (heartbeatTimer !== undefined) {
         window.clearInterval(heartbeatTimer);
         heartbeatTimer = undefined;
@@ -55,19 +64,13 @@ export function App() {
     const requestLatestSnapshot = (lastRevision: number | null) => {
       if (webSocket?.readyState === WebSocket.OPEN) {
         webSocket.send(
-          JSON.stringify({
-            type: 'snapshot.request',
-            lastRevision,
-          }),
+          JSON.stringify({ type: 'snapshot.request', lastRevision }),
         );
       }
     };
 
     const scheduleReconnect = () => {
-      if (disposed || reconnectTimer !== undefined) {
-        return;
-      }
-
+      if (disposed || reconnectTimer !== undefined) return;
       setConnectionState('reconnecting');
       const delay = Math.min(
         RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempt,
@@ -81,10 +84,7 @@ export function App() {
     };
 
     const connect = () => {
-      if (disposed) {
-        return;
-      }
-
+      if (disposed) return;
       setConnectionState(
         latestRevisionRef.current === null ? 'connecting' : 'reconnecting',
       );
@@ -108,14 +108,10 @@ export function App() {
           const message = parseObsBridgeServerMessage(
             JSON.parse(String(event.data)),
           );
-
-          if (message.type === 'pong') {
-            return;
-          }
+          if (message.type === 'pong') return;
 
           const incomingSnapshot = message.snapshot;
           const currentRevision = latestRevisionRef.current;
-
           if (
             currentRevision !== null &&
             incomingSnapshot.revision > currentRevision + 1
@@ -123,7 +119,6 @@ export function App() {
             setRevisionGapCount((count) => count + 1);
             requestLatestSnapshot(currentRevision);
           }
-
           if (
             currentRevision !== null &&
             incomingSnapshot.revision <= currentRevision
@@ -205,13 +200,24 @@ export function App() {
       data-canvas-width={snapshot.canvas.width}
       data-canvas-height={snapshot.canvas.height}
       data-latency-ms={lastLatencyMs ?? undefined}
+      data-render-duration-ms={renderMetrics?.durationMs.toFixed(2)}
+      data-cache-hits={renderMetrics?.cacheHits}
+      data-cache-misses={renderMetrics?.cacheMisses}
       data-revision-gap-count={revisionGapCount}
       style={outputStyle}
     >
+      <canvas
+        ref={canvasRef}
+        className="broadcast-canvas"
+        width={snapshot.canvas.width}
+        height={snapshot.canvas.height}
+        aria-label={`${snapshot.pageName}の配信Canvas`}
+      />
       <span className="visually-hidden" aria-live="polite">
         {snapshot.pageName} revision {snapshot.revision} /{' '}
         {connectionLabel(connectionState)} / latency {lastLatencyMs ?? 0} ms /
-        revision gaps {revisionGapCount}
+        render {renderMetrics?.durationMs.toFixed(1) ?? 0} ms / revision gaps{' '}
+        {revisionGapCount}
       </span>
     </main>
   );
@@ -219,11 +225,7 @@ export function App() {
 
 export function createWebSocketUrl(location: Location): string | null {
   const match = /^\/overlay\/([0-9A-Fa-f]{64})$/.exec(location.pathname);
-
-  if (match === null) {
-    return null;
-  }
-
+  if (match === null) return null;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${location.host}/ws?token=${encodeURIComponent(match[1]!)}`;
 }
