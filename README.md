@@ -15,7 +15,7 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M1「ワークスペース・ページ・OBS同期」のDomain実装を進めています。
+M1「ワークスペース・ページ・OBS同期」の初期縦スライスです。
 
 実装済み:
 
@@ -26,9 +26,15 @@ M1「ワークスペース・ページ・OBS同期」のDomain実装を進めて
 - ページ追加・複製・削除・並び替えCommand
 - 編集ページと配信ページの独立切り替え
 - Project単位のUndo / Redo履歴
+- 表示専用`BroadcastSnapshot` DTO
+- revision付きsnapshotのWebSocket配信
+- 接続直後の最新snapshot送信
+- Overlayの自動再接続と最後の正常フレーム保持
+- token付きOBS Browser Source URLの安全なコピー
+- ビルド済みOverlayのloopback静的配信
 - lint、型検査、Unit Test、production build、E2E
 
-描画、OBS snapshot / revision同期、永続化、画像処理は後続Issueで実装します。
+描画、Layer差分イベント、テーマ、永続化、画像処理は後続Issueで実装します。
 
 ## 必要環境
 
@@ -52,8 +58,18 @@ pnpm install
 pnpm dev:desktop
 ```
 
-Vite Renderer、OBSブリッジ、Electron Main/PreloadのTypeScript監視、Electronを同時起動します。
+Editor、OBS Protocol、OBS Bridge、ビルド済みOverlay、Electron Main / Preloadを起動します。
 RendererからNode.js APIへ直接アクセスできない構成です。
+
+### OBSへの追加
+
+1. Desktop Editor上部の「OBS URLをコピー」を押す
+2. OBSで「ソース」から「ブラウザ」を追加する
+3. コピーしたURLをURL欄へ貼り付ける
+4. 幅と高さを配信キャンバスに合わせる
+5. 「配信ページに設定」でOBSへ出すページを明示的に切り替える
+
+Overlay URLには起動ごとに生成される接続tokenが含まれます。URLを画面やログへ表示せず、Electron Main Processから直接クリップボードへ書き込みます。
 
 ### OBS Overlay単体
 
@@ -62,7 +78,7 @@ pnpm dev:overlay
 ```
 
 開発用URLは`http://127.0.0.1:5174`です。
-現時点では接続待機画面のみで、snapshot / revision同期は`IVR-240`で実装します。
+単体起動ではBrowser Previewを表示します。実際のsnapshot同期はDesktop Editorが起動するloopbackブリッジ経由で行います。
 
 ## 品質確認
 
@@ -75,8 +91,9 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、ページ操作と初期画面を確認します。
-Electronプロセス自体の自動起動試験は配布設定と合わせて後続で追加します。
+`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、ページ操作とPreview状態を確認します。
+OBS Bridgeのtoken認証、snapshot push、再接続収束、静的ファイル配信はVitestで確認します。
+ElectronプロセスとOBS実機を組み合わせた自動試験は配布設定と合わせて後続で追加します。
 
 ## モノレポ構成
 
@@ -86,8 +103,9 @@ apps/
   overlay/          OBS Browser Source向けReactアプリ
 packages/
   config/           共有TypeScript設定
-  domain/           Workspace / Project / Page / Command履歴
-  obs-bridge/       loopback限定HTTP / WebSocket境界
+  domain/           Workspace / Project / Page / Command履歴・snapshot投影
+  obs-protocol/     Editor・Bridge・Overlay間のDTOとメッセージ検証
+  obs-bridge/       loopback限定HTTP / WebSocket・Overlay静的配信
 ```
 
 将来追加するパッケージは、[アーキテクチャ](docs/architecture.md)の責務境界に従います。

@@ -1,6 +1,11 @@
+import type { BroadcastSnapshot } from '@live-board/obs-protocol';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  BROADCAST_PUBLISH_CHANNEL,
+  OBS_COPY_SOURCE_URL_CHANNEL,
   SECURITY_STATUS_CHANNEL,
+  type CopyObsSourceUrlResponse,
+  type PublishBroadcastSnapshotResponse,
   type SecurityStatus,
 } from './contracts.js';
 
@@ -26,5 +31,15 @@ contextBridge.exposeInMainWorld(
     getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
     getSecurityStatus: (requestId: string): Promise<SecurityStatus> =>
       ipcRenderer.invoke(SECURITY_STATUS_CHANNEL, { requestId }) as Promise<SecurityStatus>,
+    publishBroadcastSnapshot: (
+      requestId: string,
+      snapshot: BroadcastSnapshot,
+    ): Promise<PublishBroadcastSnapshotResponse> =>
+      ipcRenderer.invoke(BROADCAST_PUBLISH_CHANNEL, {
+        requestId,
+        snapshot,
+      }) as Promise<PublishBroadcastSnapshotResponse>,
+    copyObsSourceUrl: (requestId: string): Promise<CopyObsSourceUrlResponse> =>
+      ipcRenderer.invoke(OBS_COPY_SOURCE_URL_CHANNEL, { requestId }) as Promise<CopyObsSourceUrlResponse>,
   }),
 );

@@ -18,14 +18,41 @@ body,
   min-width: 320px;
   min-height: 100%;
   margin: 0;
+  overflow: hidden;
   background: transparent;
 }
 
 .overlay-root {
   display: grid;
+  width: 100vw;
   min-height: 100vh;
   place-items: center;
   background: transparent;
+}
+
+.broadcast-output {
+  height: 100vh;
+  place-items: stretch;
+}
+
+.page-transition-fade {
+  animation: page-fade-in var(--page-transition-duration, 150ms) ease-out both;
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-fade {
+    animation-duration: 1ms;
+  }
 }
 
 .connection-state {
@@ -61,4 +88,14 @@ body,
   border-radius: 999px;
   background: #f59e0b;
   box-shadow: 0 0 0 5px rgb(245 158 11 / 16%);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseSecurityStatusRequest } from '../electron/contracts.js';
+import {
+  parsePublishBroadcastSnapshotRequest,
+  parseSecurityStatusRequest,
+} from '../electron/contracts.js';
 import {
   assertTrustedIpcSender,
   createRendererContentSecurityPolicy,
@@ -11,6 +14,22 @@ import {
 const trustConfig: RendererTrustConfig = {
   developmentServerUrl: 'http://127.0.0.1:5173',
   packagedRendererUrl: 'file:///opt/live-board/dist/index.html',
+};
+
+const snapshot = {
+  schemaVersion: 1,
+  projectId: 'project-1',
+  pageId: 'page-1',
+  pageName: 'ページ 1',
+  revision: 1,
+  generatedAt: '2026-07-22T00:00:00.000Z',
+  canvas: {
+    width: 1920,
+    height: 1080,
+    dpi: 72,
+    background: { type: 'transparent' },
+  },
+  layers: [],
 };
 
 describe('Electron security boundary', () => {
@@ -99,11 +118,27 @@ describe('Electron security boundary', () => {
   });
 });
 
-describe('parseSecurityStatusRequest', () => {
+describe('IPC request parser', () => {
   it('安全なrequestIdを受け付ける', () => {
     expect(parseSecurityStatusRequest({ requestId: 'request_123-abc' })).toEqual({
       requestId: 'request_123-abc',
     });
+  });
+
+  it('BroadcastSnapshotを実行時検証する', () => {
+    expect(
+      parsePublishBroadcastSnapshotRequest({
+        requestId: 'publish_1',
+        snapshot,
+      }),
+    ).toEqual({ requestId: 'publish_1', snapshot });
+
+    expect(() =>
+      parsePublishBroadcastSnapshotRequest({
+        requestId: 'publish_1',
+        snapshot: { ...snapshot, revision: -1 },
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT');
   });
 
   it('空文字・過長・記号・非objectを拒否する', () => {

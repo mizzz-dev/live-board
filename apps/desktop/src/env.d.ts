@@ -21,12 +21,28 @@ interface SecurityStatus {
     host: '127.0.0.1' | '::1';
     port: number;
     connectionCount: number;
+    latestRevision: number | null;
   };
+}
+
+interface PublishBroadcastSnapshotResponse {
+  requestId: string;
+  acceptedRevision: number;
+}
+
+interface CopyObsSourceUrlResponse {
+  requestId: string;
+  copied: true;
 }
 
 interface Window {
   liveBoard?: {
     getRuntimeInfo: () => RuntimeInfo;
     getSecurityStatus: (requestId: string) => Promise<SecurityStatus>;
+    publishBroadcastSnapshot: (
+      requestId: string,
+      snapshot: import('@live-board/obs-protocol').BroadcastSnapshot,
+    ) => Promise<PublishBroadcastSnapshotResponse>;
+    copyObsSourceUrl: (requestId: string) => Promise<CopyObsSourceUrlResponse>;
   };
 }

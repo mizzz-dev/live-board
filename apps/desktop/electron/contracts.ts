@@ -1,4 +1,11 @@
+import {
+  parseBroadcastSnapshot,
+  type BroadcastSnapshot,
+} from '@live-board/obs-protocol';
+
 export const SECURITY_STATUS_CHANNEL = 'security:get-status';
+export const BROADCAST_PUBLISH_CHANNEL = 'broadcast:publish-snapshot';
+export const OBS_COPY_SOURCE_URL_CHANNEL = 'obs:copy-source-url';
 
 export interface SecurityStatusRequest {
   requestId: string;
@@ -17,7 +24,23 @@ export interface SecurityStatus {
     host: '127.0.0.1' | '::1';
     port: number;
     connectionCount: number;
+    latestRevision: number | null;
   };
+}
+
+export interface PublishBroadcastSnapshotRequest {
+  requestId: string;
+  snapshot: BroadcastSnapshot;
+}
+
+export interface PublishBroadcastSnapshotResponse {
+  requestId: string;
+  acceptedRevision: number;
+}
+
+export interface CopyObsSourceUrlResponse {
+  requestId: string;
+  copied: true;
 }
 
 export function parseSecurityStatusRequest(
@@ -27,18 +50,33 @@ export function parseSecurityStatusRequest(
     throw new Error('IPC_INVALID_REQUEST');
   }
 
-  const requestId = input.requestId;
+  return { requestId: parseRequestId(input.requestId) };
+}
 
+export function parsePublishBroadcastSnapshotRequest(
+  input: unknown,
+): PublishBroadcastSnapshotRequest {
+  if (!isRecord(input)) {
+    throw new Error('IPC_INVALID_REQUEST');
+  }
+
+  return {
+    requestId: parseRequestId(input.requestId),
+    snapshot: parseBroadcastSnapshot(input.snapshot),
+  };
+}
+
+function parseRequestId(input: unknown): string {
   if (
-    typeof requestId !== 'string' ||
-    requestId.length < 1 ||
-    requestId.length > 64 ||
-    !/^[A-Za-z0-9_-]+$/.test(requestId)
+    typeof input !== 'string' ||
+    input.length < 1 ||
+    input.length > 64 ||
+    !/^[A-Za-z0-9_-]+$/.test(input)
   ) {
     throw new Error('IPC_INVALID_REQUEST_ID');
   }
 
-  return { requestId };
+  return input;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
