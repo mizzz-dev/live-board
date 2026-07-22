@@ -1,0 +1,61 @@
+.canvas-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, #242836 25%, transparent 25%),
+    linear-gradient(-45deg, #242836 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #242836 75%),
+    linear-gradient(-45deg, transparent 75%, #242836 75%),
+    #1d202a;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-size: 20px 20px;
+  touch-action: none;
+  user-select: none;
+}
+
+.canvas-transform {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 35%);
+  will-change: transform;
+}
+
+.document-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.canvas-grid,
+.canvas-guide {
+  position: absolute;
+  pointer-events: none;
+}
+
+.canvas-grid {
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgb(96 165 250 / 22%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(96 165 250 / 22%) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+}
+
+.canvas-guide.vertical {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #fb7185;
+}
+
+.canvas-guide.horizontal {
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #fb7185;
+}
