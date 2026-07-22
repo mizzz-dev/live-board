@@ -27,8 +27,11 @@ interface CacheEntry {
 
 export class CanvasLayerCache {
   private readonly entries = new Map<string, CacheEntry>();
+  private readonly createCanvas: CanvasFactory;
 
-  constructor(private readonly createCanvas: CanvasFactory = defaultCanvasFactory) {}
+  constructor(createCanvas: CanvasFactory = defaultCanvasFactory) {
+    this.createCanvas = createCanvas;
+  }
 
   getRasterLayer(
     layer: BroadcastRasterLayer,
@@ -99,7 +102,11 @@ export class CanvasRenderer {
           snapshot.canvas.width,
           snapshot.canvas.height,
         );
-        cached.hit ? cacheHits += 1 : cacheMisses += 1;
+        if (cached.hit) {
+          cacheHits += 1;
+        } else {
+          cacheMisses += 1;
+        }
         context.drawImage(cached.canvas, 0, 0);
       } else {
         renderVectorLayer(context, layer, snapshot.canvas.width, snapshot.canvas.height);
@@ -310,7 +317,10 @@ function renderVectorLayer(
   }
 }
 
-function applyLayerState(context: CanvasContext, layer: Exclude<BroadcastLayer, { type: 'folder' }>): void {
+function applyLayerState(
+  context: CanvasContext,
+  layer: Exclude<BroadcastLayer, { type: 'folder' }>,
+): void {
   context.globalAlpha = layer.opacity;
   context.globalCompositeOperation = blendMode(layer.blendMode);
   context.translate(layer.transform.x, layer.transform.y);
