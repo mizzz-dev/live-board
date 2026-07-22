@@ -5,6 +5,7 @@ import {
 
 export const SECURITY_STATUS_CHANNEL = 'security:get-status';
 export const BROADCAST_PUBLISH_CHANNEL = 'broadcast:publish-snapshot';
+export const OBS_COPY_SOURCE_URL_CHANNEL = 'obs:copy-source-url';
 
 export interface SecurityStatusRequest {
   requestId: string;
@@ -35,6 +36,11 @@ export interface PublishBroadcastSnapshotRequest {
 export interface PublishBroadcastSnapshotResponse {
   requestId: string;
   acceptedRevision: number;
+}
+
+export interface CopyObsSourceUrlResponse {
+  requestId: string;
+  copied: true;
 }
 
 export function parseSecurityStatusRequest(
