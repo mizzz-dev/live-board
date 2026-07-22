@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -83,16 +83,23 @@ describe('OBS bridge', () => {
     const origin = new URL(activeBridge.info.overlayUrl).origin;
     const assetResponse = await fetch(`${origin}/assets/app.js`);
     expect(assetResponse.status).toBe(200);
-    expect(assetResponse.headers.get('content-type')).toContain('text/javascript');
+    expect(assetResponse.headers.get('content-type')).toContain(
+      'text/javascript',
+    );
 
-    const traversalResponse = await fetch(`${origin}/assets/%2e%2e/index.html`);
+    const traversalResponse = await fetch(
+      `${origin}/assets/%2e%2e/index.html`,
+    );
     expect(traversalResponse.status).not.toBe(200);
   });
 
   it('正しいOriginとtokenのWebSocket接続だけを許可する', async () => {
     activeBridge = await startObsBridge();
     const origin = new URL(activeBridge.info.overlayUrl).origin;
-    const webSocket = await openWebSocket(activeBridge.info.webSocketUrl, origin);
+    const webSocket = await openWebSocket(
+      activeBridge.info.webSocketUrl,
+      origin,
+    );
 
     webSocket.send(JSON.stringify({ type: 'ping', timestamp: 123 }));
     const [rawMessage] = await once(webSocket, 'message');
@@ -105,7 +112,7 @@ describe('OBS bridge', () => {
     await once(webSocket, 'close');
   });
 
-  it('接続時に最新snapshotを送信し、更新をpushする', async () => {
+  it('接続時に最新snapshotを送り、ページ変更をフェード付きでpushする', async () => {
     activeBridge = await startObsBridge({ initialSnapshot: snapshot });
     const origin = new URL(activeBridge.info.overlayUrl).origin;
     const webSocket = new WebSocket(activeBridge.info.webSocketUrl, { origin });
@@ -129,8 +136,9 @@ describe('OBS bridge', () => {
     expect(activeBridge.publishSnapshot(updatedSnapshot)).toBe(2);
     const [updatedRawMessage] = await updateMessagePromise;
     expect(JSON.parse(updatedRawMessage.toString())).toEqual({
-      type: 'snapshot',
+      type: 'page.changed',
       snapshot: updatedSnapshot,
+      transition: { type: 'fade', durationMs: 150 },
     });
     expect(activeBridge.getLatestRevision()).toBe(2);
 
@@ -142,10 +150,39 @@ describe('OBS bridge', () => {
     await once(webSocket, 'close');
   });
 
+  it('同じページの内容更新はsnapshotとしてpushする', async () => {
+    activeBridge = await startObsBridge({ initialSnapshot: snapshot });
+    const origin = new URL(activeBridge.info.overlayUrl).origin;
+    const webSocket = new WebSocket(activeBridge.info.webSocketUrl, { origin });
+    const initialMessagePromise = once(webSocket, 'message');
+
+    await once(webSocket, 'open');
+    await initialMessagePromise;
+
+    const updatedSnapshot = {
+      ...snapshot,
+      pageName: 'ページ名更新',
+      revision: 2,
+    } satisfies BroadcastSnapshot;
+    const updateMessagePromise = once(webSocket, 'message');
+    activeBridge.publishSnapshot(updatedSnapshot);
+    const [updatedRawMessage] = await updateMessagePromise;
+
+    expect(JSON.parse(updatedRawMessage.toString())).toEqual({
+      type: 'snapshot',
+      snapshot: updatedSnapshot,
+    });
+
+    webSocket.close();
+    await once(webSocket, 'close');
+  });
+
   it('切断中の更新を再接続時の最新snapshotで収束させる', async () => {
     activeBridge = await startObsBridge({ initialSnapshot: snapshot });
     const origin = new URL(activeBridge.info.overlayUrl).origin;
-    const firstConnection = new WebSocket(activeBridge.info.webSocketUrl, { origin });
+    const firstConnection = new WebSocket(activeBridge.info.webSocketUrl, {
+      origin,
+    });
     const firstSnapshotPromise = once(firstConnection, 'message');
 
     await once(firstConnection, 'open');
@@ -161,7 +198,9 @@ describe('OBS bridge', () => {
     } satisfies BroadcastSnapshot;
     activeBridge.publishSnapshot(latestSnapshot);
 
-    const reconnected = new WebSocket(activeBridge.info.webSocketUrl, { origin });
+    const reconnected = new WebSocket(activeBridge.info.webSocketUrl, {
+      origin,
+    });
     const latestMessagePromise = once(reconnected, 'message');
     await once(reconnected, 'open');
     const [latestRawMessage] = await latestMessagePromise;
@@ -206,7 +245,10 @@ describe('OBS bridge', () => {
   it('未知message typeをpolicy violationとして切断する', async () => {
     activeBridge = await startObsBridge();
     const origin = new URL(activeBridge.info.overlayUrl).origin;
-    const webSocket = await openWebSocket(activeBridge.info.webSocketUrl, origin);
+    const webSocket = await openWebSocket(
+      activeBridge.info.webSocketUrl,
+      origin,
+    );
 
     webSocket.send(JSON.stringify({ type: 'unknown' }));
     const [closeCode] = await once(webSocket, 'close');
