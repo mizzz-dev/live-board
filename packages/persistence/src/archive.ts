@@ -485,8 +485,9 @@ function restoreAssetLibraries(
       if (sha256Hex(bytes) !== asset.sha256) {
         throw persistenceError('ASSET_HASH_MISMATCH', `Asset SHA-256が一致しません: ${asset.id}`);
       }
+      const { archivePath: _archivePath, ...metadata } = asset;
       return {
-        ...asset,
+        ...metadata,
         dataUrl: `data:${asset.mime};base64,${bytesToBase64(bytes)}`,
         fileNames: [...asset.fileNames],
       } satisfies ProjectAsset;

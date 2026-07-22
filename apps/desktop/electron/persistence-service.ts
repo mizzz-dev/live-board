@@ -474,19 +474,19 @@ function validateArchiveContainer(archive: Uint8Array): void {
 
 async function atomicWriteFile(path: string, bytes: Uint8Array): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
+  await recoverAtomicTarget(path);
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   const backupPath = `${path}.bak`;
   let targetMovedToBackup = false;
   const handle = await open(temporaryPath, 'wx', 0o600);
   try {
-    await handle.writeFile(bytes);
+    await writeFile(handle, bytes);
     await handle.sync();
   } finally {
     await handle.close();
   }
 
   try {
-    await recoverAtomicTarget(path);
     try {
       await rename(path, backupPath);
       targetMovedToBackup = true;
