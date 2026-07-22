@@ -3,7 +3,6 @@ import {
   type BroadcastSnapshot,
 } from '@live-board/obs-protocol';
 import {
-  DomainError,
   findPage,
   findProject,
   type ProjectId,
@@ -17,10 +16,7 @@ export function createBroadcastSnapshot(
   generatedAt = new Date().toISOString(),
 ): BroadcastSnapshot {
   if (!Number.isSafeInteger(revision) || revision < 0) {
-    throw new DomainError(
-      'INVALID_BROADCAST_REVISION',
-      `Invalid broadcast revision: ${revision}`,
-    );
+    throw new Error(`Invalid broadcast revision: ${revision}`);
   }
 
   const project = findProject(workspace, projectId);
