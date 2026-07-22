@@ -2,6 +2,7 @@ export * from './model.js';
 export * from './commands.js';
 export * from './history.js';
 export * from './layers.js';
+export * from './layer-merge.js';
 export * from './layer-commands.js';
 export * from './layer-history.js';
 export * from './broadcast.js';
