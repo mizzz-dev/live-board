@@ -18,8 +18,8 @@ test('SVG画像をImage Layerとして追加し同一バイナリを重複保存
   });
   await expect(page.getByText('Asset: 1件 /', { exact: false })).toBeVisible();
   await expect(page.locator('.asset-row')).toHaveCount(1);
+  await expect(page.locator('.layer-list .layer-row')).toHaveCount(1);
   await expect(page.getByText('cover.svg', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('画像 1', { exact: true })).toBeVisible();
 
   await fileInput.setInputFiles({
     name: 'same-content.svg',
@@ -27,7 +27,8 @@ test('SVG画像をImage Layerとして追加し同一バイナリを重複保存
     buffer: Buffer.from(safeSvg),
   });
   await expect(page.locator('.asset-row')).toHaveCount(1);
-  await expect(page.getByText('画像 2', { exact: true })).toBeVisible();
+  await expect(page.locator('.layer-list .layer-row')).toHaveCount(2);
+  await expect(page.getByText('same-content.svg', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Asset: 1件 /', { exact: false })).toBeVisible();
 });
 
