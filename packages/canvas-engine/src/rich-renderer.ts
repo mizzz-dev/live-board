@@ -56,7 +56,11 @@ export class RichCanvasRenderer {
       context.save();
       applyLayerState(context, layer);
       if (layer.type === 'raster') {
-        const canvas = this.getLayerCanvas(layer.id, snapshot.canvas.width, snapshot.canvas.height);
+        const canvas = this.getLayerCanvas(
+          layer.id,
+          snapshot.canvas.width,
+          snapshot.canvas.height,
+        );
         const metrics = this.rasterRenderer.render(canvas, {
           ...snapshot,
           canvas: { ...snapshot.canvas, background: { type: 'transparent' } },
@@ -68,7 +72,8 @@ export class RichCanvasRenderer {
         context.drawImage(canvas, 0, 0);
       } else if (layer.type === 'image') {
         const drawn = this.renderImage(context, layer, snapshot.assets ?? []);
-        drawn ? cacheHits += 1 : cacheMisses += 1;
+        if (drawn) cacheHits += 1;
+        else cacheMisses += 1;
       } else if (layer.type === 'text') {
         renderText(context, layer);
       } else if (layer.type === 'shape') {
@@ -95,9 +100,16 @@ export class RichCanvasRenderer {
   sampleColor(target: CanvasLike, x: number, y: number): string | null {
     const px = Math.floor(x);
     const py = Math.floor(y);
-    if (px < 0 || py < 0 || px >= target.width || py >= target.height) return null;
+    if (px < 0 || py < 0 || px >= target.width || py >= target.height) {
+      return null;
+    }
     const data = getContext(target).getImageData(px, py, 1, 1).data;
-    return rgbaToHex({ r: data[0]!, g: data[1]!, b: data[2]!, a: data[3]! });
+    return rgbaToHex({
+      r: data[0]!,
+      g: data[1]!,
+      b: data[2]!,
+      a: data[3]!,
+    });
   }
 
   clear(): void {
@@ -125,15 +137,24 @@ export class RichCanvasRenderer {
     assets: readonly BroadcastAsset[],
   ): boolean {
     const assetId = layer.content.assetId;
-    const asset = assetId === null ? undefined : assets.find((candidate) => candidate.id === assetId);
+    const asset = assetId === null
+      ? undefined
+      : assets.find((candidate) => candidate.id === assetId);
     const cached = assetId === null ? undefined : this.imageCache.get(assetId);
-    if (asset === undefined || cached === undefined || cached.sha256 !== asset.sha256) {
+    if (
+      asset === undefined ||
+      cached === undefined ||
+      cached.sha256 !== asset.sha256
+    ) {
       drawImagePlaceholder(context, layer.content.width, layer.content.height);
       return false;
     }
     const crop = layer.content.crop;
     context.save();
-    context.translate(layer.content.flipX ? layer.content.width : 0, layer.content.flipY ? layer.content.height : 0);
+    context.translate(
+      layer.content.flipX ? layer.content.width : 0,
+      layer.content.flipY ? layer.content.height : 0,
+    );
     context.scale(layer.content.flipX ? -1 : 1, layer.content.flipY ? -1 : 1);
     context.drawImage(
       cached.image,
@@ -152,7 +173,12 @@ export class RichCanvasRenderer {
 
   private primeAssets(assets: readonly BroadcastAsset[]): void {
     for (const asset of assets) {
-      if (this.imageCache.get(asset.id)?.sha256 === asset.sha256 || this.pending.has(asset.id)) continue;
+      if (
+        this.imageCache.get(asset.id)?.sha256 === asset.sha256 ||
+        this.pending.has(asset.id)
+      ) {
+        continue;
+      }
       if (typeof Image === 'undefined') continue;
       this.pending.add(asset.id);
       const image = new Image();
@@ -160,7 +186,7 @@ export class RichCanvasRenderer {
       image.onload = () => {
         this.pending.delete(asset.id);
         this.imageCache.set(asset.id, { image, sha256: asset.sha256 });
-        this.invalidate?.();
+        if (this.invalidate !== undefined) this.invalidate();
       };
       image.onerror = () => {
         this.pending.delete(asset.id);
@@ -188,7 +214,11 @@ function renderText(context: CanvasContext, layer: BroadcastTextLayer): void {
   context.shadowBlur = content.shadowBlur;
   context.shadowOffsetX = content.shadowOffsetX;
   context.shadowOffsetY = content.shadowOffsetY;
-  const x = content.align === 'center' ? (content.maxWidth ?? 0) / 2 : content.align === 'right' ? content.maxWidth ?? 0 : 0;
+  const x = content.align === 'center'
+    ? (content.maxWidth ?? 0) / 2
+    : content.align === 'right'
+      ? content.maxWidth ?? 0
+      : 0;
   const lines = content.text.split(/\r?\n/);
   lines.forEach((line, index) => {
     const y = index * content.fontSize * content.lineHeight;
@@ -196,13 +226,11 @@ function renderText(context: CanvasContext, layer: BroadcastTextLayer): void {
       context.strokeStyle = content.strokeColor;
       context.lineWidth = content.strokeWidth * 2;
       context.lineJoin = 'round';
-      content.maxWidth === null
-        ? context.strokeText(line, x, y)
-        : context.strokeText(line, x, y, content.maxWidth);
+      if (content.maxWidth === null) context.strokeText(line, x, y);
+      else context.strokeText(line, x, y, content.maxWidth);
     }
-    content.maxWidth === null
-      ? context.fillText(line, x, y)
-      : context.fillText(line, x, y, content.maxWidth);
+    if (content.maxWidth === null) context.fillText(line, x, y);
+    else context.fillText(line, x, y, content.maxWidth);
   });
 }
 
@@ -213,12 +241,27 @@ function renderShape(context: CanvasContext, layer: BroadcastShapeLayer): void {
   if (content.fill !== null) context.fillStyle = content.fill;
   context.beginPath();
   if (content.shape === 'ellipse') {
-    context.ellipse(content.width / 2, content.height / 2, content.width / 2, content.height / 2, 0, 0, Math.PI * 2);
+    context.ellipse(
+      content.width / 2,
+      content.height / 2,
+      content.width / 2,
+      content.height / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
   } else if (content.shape === 'line') {
     context.moveTo(0, 0);
     context.lineTo(content.width, content.height);
   } else {
-    roundedRectPath(context, 0, 0, content.width, content.height, content.cornerRadius);
+    roundedRectPath(
+      context,
+      0,
+      0,
+      content.width,
+      content.height,
+      content.cornerRadius,
+    );
   }
   if (content.fill !== null && content.shape !== 'line') context.fill();
   context.stroke();
@@ -245,7 +288,11 @@ function roundedRectPath(
   context.closePath();
 }
 
-function drawImagePlaceholder(context: CanvasContext, width: number, height: number): void {
+function drawImagePlaceholder(
+  context: CanvasContext,
+  width: number,
+  height: number,
+): void {
   context.save();
   context.strokeStyle = '#7A8299';
   context.fillStyle = 'rgba(122,130,153,0.12)';
@@ -262,18 +309,22 @@ function applyLayerState(
   context.globalAlpha = layer.opacity;
   context.globalCompositeOperation = blendMode(layer.blendMode);
   context.translate(layer.transform.x, layer.transform.y);
-  context.rotate(layer.transform.rotation * Math.PI / 180);
+  context.rotate((layer.transform.rotation * Math.PI) / 180);
   context.scale(layer.transform.scaleX, layer.transform.scaleY);
 }
 
-function blendMode(mode: BroadcastLayer['blendMode']): GlobalCompositeOperation {
+function blendMode(
+  mode: BroadcastLayer['blendMode'],
+): GlobalCompositeOperation {
   if (mode === 'normal') return 'source-over';
   if (mode === 'add') return 'lighter';
   return mode;
 }
 
 function createCanvas(width: number, height: number): CanvasLike {
-  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(width, height);
+  }
   if (typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     canvas.width = width;
