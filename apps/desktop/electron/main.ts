@@ -1,10 +1,13 @@
 import { startObsBridge, type ObsBridge } from '@live-board/obs-bridge';
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  BROADCAST_PUBLISH_CHANNEL,
+  parsePublishBroadcastSnapshotRequest,
   parseSecurityStatusRequest,
   SECURITY_STATUS_CHANNEL,
+  type PublishBroadcastSnapshotResponse,
   type SecurityStatus,
 } from './contracts.js';
 import {
@@ -79,23 +82,31 @@ function createTrustConfig(): RendererTrustConfig {
   };
 }
 
-function registerSecurityIpcHandlers(
+function assertTrustedEvent(
+  event: IpcMainInvokeEvent,
+  trustConfig: RendererTrustConfig,
+): void {
+  const senderFrame = event.senderFrame;
+
+  assertTrustedIpcSender(
+    {
+      senderUrl: senderFrame?.url ?? '',
+      isMainFrame:
+        senderFrame !== null && senderFrame === event.sender.mainFrame,
+    },
+    trustConfig,
+  );
+}
+
+function registerIpcHandlers(
   trustConfig: RendererTrustConfig,
   bridge: ObsBridge,
 ): void {
   ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
+  ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
+
   ipcMain.handle(SECURITY_STATUS_CHANNEL, (event, input: unknown) => {
-    const senderFrame = event.senderFrame;
-
-    assertTrustedIpcSender(
-      {
-        senderUrl: senderFrame?.url ?? '',
-        isMainFrame:
-          senderFrame !== null && senderFrame === event.sender.mainFrame,
-      },
-      trustConfig,
-    );
-
+    assertTrustedEvent(event, trustConfig);
     const request = parseSecurityStatusRequest(input);
     const response: SecurityStatus = {
       requestId: request.requestId,
@@ -110,7 +121,19 @@ function registerSecurityIpcHandlers(
         host: bridge.info.host,
         port: bridge.info.port,
         connectionCount: bridge.getConnectionCount(),
+        latestRevision: bridge.getLatestRevision(),
       },
+    };
+
+    return response;
+  });
+
+  ipcMain.handle(BROADCAST_PUBLISH_CHANNEL, (event, input: unknown) => {
+    assertTrustedEvent(event, trustConfig);
+    const request = parsePublishBroadcastSnapshotRequest(input);
+    const response: PublishBroadcastSnapshotResponse = {
+      requestId: request.requestId,
+      acceptedRevision: bridge.publishSnapshot(request.snapshot),
     };
 
     return response;
@@ -133,8 +156,9 @@ async function initializeApplication(): Promise<void> {
       developmentServerUrl === undefined
         ? []
         : ['http://127.0.0.1:5174'],
+    overlayRoot: join(currentDirectory, '../../overlay/dist'),
   });
-  registerSecurityIpcHandlers(trustConfig, obsBridge);
+  registerIpcHandlers(trustConfig, obsBridge);
 
   await createMainWindow(rendererEntryUrl, trustConfig);
 
@@ -175,6 +199,7 @@ app.on('before-quit', (event) => {
     .finally(() => {
       shutdownComplete = true;
       ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
+      ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
       app.quit();
     });
 });
