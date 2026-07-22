@@ -45,19 +45,20 @@ test('Layer追加・表示切り替え・Undo・RedoをPage内で実行できる
 
   await page.getByRole('button', { name: 'ラスター', exact: true }).click();
   await expect(page.getByText('ラスター 1', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Layer履歴 1/)).toBeVisible();
+  await expect(page.getByText('Layer履歴 1 / Redo 0')).toBeVisible();
 
   await page
     .getByRole('button', { name: 'ラスター 1の表示を切り替え' })
     .click();
-  await expect(page.getByRole('button', { name: '非表示', exact: true })).toBeVisible();
+  await expect(page.getByText('Layer履歴 2 / Redo 0')).toBeVisible();
 
   await page.getByRole('button', { name: 'Layerを元に戻す' }).click();
-  await expect(page.getByRole('button', { name: '表示', exact: true })).toBeVisible();
+  await expect(page.getByText('Layer履歴 1 / Redo 1')).toBeVisible();
 
   await page.getByRole('button', { name: 'Layerをやり直す' }).click();
-  await expect(page.getByRole('button', { name: '非表示', exact: true })).toBeVisible();
+  await expect(page.getByText('Layer履歴 2 / Redo 0')).toBeVisible();
 
   await page.getByLabel('合成モード').selectOption('multiply');
   await expect(page.getByLabel('合成モード')).toHaveValue('multiply');
+  await expect(page.getByText('Layer履歴 3 / Redo 0')).toBeVisible();
 });
