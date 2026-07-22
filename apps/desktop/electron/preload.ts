@@ -47,7 +47,7 @@ export interface LiveBoardApi {
     workspaceId: string;
     revision: number;
     archive: Uint8Array;
-    documentId?: string;
+    documentId?: string | undefined;
     saveAs: boolean;
   }): Promise<WorkspaceSaveResponse>;
   openWorkspace(requestId: string): Promise<WorkspaceOpenResponse>;
@@ -106,21 +106,21 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
     }) as Promise<PublishBroadcastSnapshotResponse>,
   copyObsSourceUrl: (requestId: string): Promise<CopyObsSourceUrlResponse> =>
     ipcRenderer.invoke(OBS_COPY_SOURCE_URL_CHANNEL, { requestId }) as Promise<CopyObsSourceUrlResponse>,
-  saveWorkspace: (input): Promise<WorkspaceSaveResponse> =>
+  saveWorkspace: (input: Parameters<LiveBoardApi['saveWorkspace']>[0]): Promise<WorkspaceSaveResponse> =>
     ipcRenderer.invoke(WORKSPACE_SAVE_CHANNEL, input) as Promise<WorkspaceSaveResponse>,
-  openWorkspace: (requestId): Promise<WorkspaceOpenResponse> =>
+  openWorkspace: (requestId: string): Promise<WorkspaceOpenResponse> =>
     ipcRenderer.invoke(WORKSPACE_OPEN_CHANNEL, { requestId }) as Promise<WorkspaceOpenResponse>,
-  openRecentWorkspace: (requestId, documentId): Promise<WorkspaceOpenResponse> =>
+  openRecentWorkspace: (requestId: string, documentId: string): Promise<WorkspaceOpenResponse> =>
     ipcRenderer.invoke(WORKSPACE_OPEN_RECENT_CHANNEL, {
       requestId,
       documentId,
     }) as Promise<WorkspaceOpenResponse>,
-  listRecentWorkspaces: (requestId): Promise<WorkspaceListRecentResponse> =>
+  listRecentWorkspaces: (requestId: string): Promise<WorkspaceListRecentResponse> =>
     ipcRenderer.invoke(WORKSPACE_LIST_RECENT_CHANNEL, { requestId }) as Promise<WorkspaceListRecentResponse>,
   setWorkspaceFavorite: (
-    requestId,
-    documentId,
-    favorite,
+    requestId: string,
+    documentId: string,
+    favorite: boolean,
   ): Promise<WorkspaceSetFavoriteResponse> =>
     ipcRenderer.invoke(WORKSPACE_SET_FAVORITE_CHANNEL, {
       requestId,
@@ -128,9 +128,9 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
       favorite,
     }) as Promise<WorkspaceSetFavoriteResponse>,
   appendWorkspaceOperation: (
-    requestId,
-    workspaceId,
-    revision,
+    requestId: string,
+    workspaceId: string,
+    revision: number,
   ): Promise<WorkspaceMutationResponse> =>
     ipcRenderer.invoke(WORKSPACE_APPEND_OPERATION_CHANNEL, {
       requestId,
@@ -138,10 +138,10 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
       revision,
     }) as Promise<WorkspaceMutationResponse>,
   autosaveWorkspace: (
-    requestId,
-    workspaceId,
-    revision,
-    archive,
+    requestId: string,
+    workspaceId: string,
+    revision: number,
+    archive: Uint8Array,
   ): Promise<WorkspaceMutationResponse> =>
     ipcRenderer.invoke(WORKSPACE_AUTOSAVE_CHANNEL, {
       requestId,
@@ -149,20 +149,20 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
       revision,
       archive,
     }) as Promise<WorkspaceMutationResponse>,
-  listRecoveryCandidates: (requestId): Promise<RecoveryListResponse> =>
+  listRecoveryCandidates: (requestId: string): Promise<RecoveryListResponse> =>
     ipcRenderer.invoke(RECOVERY_LIST_CHANNEL, { requestId }) as Promise<RecoveryListResponse>,
   loadRecoveryCandidate: (
-    requestId,
-    candidateId,
+    requestId: string,
+    candidateId: string,
   ): Promise<RecoveryLoadResponse> =>
     ipcRenderer.invoke(RECOVERY_LOAD_CHANNEL, {
       requestId,
       candidateId,
     }) as Promise<RecoveryLoadResponse>,
   discardRecoveryCandidate: (
-    requestId,
-    candidateId,
-    revision,
+    requestId: string,
+    candidateId: string,
+    revision: number,
   ): Promise<WorkspaceMutationResponse> =>
     ipcRenderer.invoke(RECOVERY_DISCARD_CHANNEL, {
       requestId,

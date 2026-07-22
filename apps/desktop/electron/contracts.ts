@@ -75,7 +75,7 @@ export interface WorkspaceSaveRequest extends SecurityStatusRequest {
   workspaceId: string;
   revision: number;
   archive: Uint8Array;
-  documentId?: string;
+  documentId?: string | undefined;
   saveAs: boolean;
 }
 

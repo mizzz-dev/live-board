@@ -69,8 +69,8 @@ export interface SaveDocumentInput {
   workspaceId: string;
   revision: number;
   archive: Uint8Array;
-  documentId?: string;
-  targetPath?: string;
+  documentId?: string | undefined;
+  targetPath?: string | undefined;
   savedAt?: string;
 }
 
