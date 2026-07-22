@@ -17,12 +17,6 @@ source = replaceOnce(
 
 source = replaceOnce(
   source,
-  '          <span>{broadcastSyncLabel}</span>\n',
-  '          <span>{broadcastSyncLabel}</span>\n          <span>{persistence.status}</span>\n',
-);
-
-source = replaceOnce(
-  source,
   `        <AssetPanel\n          library={assetLibrary}\n          onImport={importAssets}\n          error={assetError}\n        />\n\n        <p className="domain-message" role="status" aria-live="polite">\n`,
   `        <AssetPanel\n          library={assetLibrary}\n          onImport={importAssets}\n          error={assetError}\n        />\n\n        <WorkspacePersistencePanel controller={persistence} />\n\n        <p className="domain-message" role="status" aria-live="polite">\n`,
 );
