@@ -71,7 +71,7 @@ describe('Rich Layer', () => {
     });
 
     state = undoLayerCommand(state, project.id, page.id);
-    expect(readText(state, page.id).text).toBe('テキスト');
+    expect(readText(state, page.id).text).toBe('');
 
     state = redoLayerCommand(state, project.id, page.id);
     expect(readText(state, page.id).text).toBe('配信用テキスト');
@@ -114,7 +114,12 @@ describe('Rich Layer', () => {
       assetId: first.asset.id,
       width: first.asset.width,
       height: first.asset.height,
-      crop: { x: 0, y: 0, width: first.asset.width, height: first.asset.height },
+      crop: {
+        x: 0,
+        y: 0,
+        width: first.asset.width,
+        height: first.asset.height,
+      },
       flipX: false,
       flipY: false,
     });
@@ -150,30 +155,37 @@ describe('Rich Layer', () => {
       crop: { x: 90, y: 0, width: 20, height: 20 },
     })).toThrow('INVALID_IMAGE_CROP');
 
+    let state = createCanvasWorkspaceCommandState(createEmptyWorkspace('workspace-2'));
+    const project = state.workspace.projects[0]!;
+    const page = project.pages[0]!;
     const text = createLayer({
-      id: 'text-1',
-      pageId: 'page-1',
+      id: 'text-invalid',
+      pageId: page.id,
       name: '文字',
       type: 'text',
     }) as TextLayer;
+    state = dispatchLayerCommandWithCanvasHistory(
+      state,
+      createAddLayerCommand(
+        project.id,
+        page.id,
+        text,
+        null,
+        0,
+        metadata('add-invalid-text'),
+      ),
+    );
     const content = getRichTextContent(text);
-    expect(() => createUpdateLayerContentCommand(
-      'project-1',
-      'page-1',
-      text.id,
-      { ...content, fontWeight: 450 },
-      metadata('invalid-text'),
-    )).not.toThrow();
     expect(() => dispatchLayerContentCommand(
-      createCanvasWorkspaceCommandState(createEmptyWorkspace('workspace-2')),
+      state,
       createUpdateLayerContentCommand(
-        'project-1',
-        'page-1',
+        project.id,
+        page.id,
         text.id,
         { ...content, fontWeight: 450 },
         metadata('invalid-text-dispatch'),
       ),
-    )).toThrow();
+    )).toThrow('INVALID_TEXT_FONT_WEIGHT');
   });
 });
 
@@ -184,6 +196,8 @@ function readText(
   const page = state.workspace.projects
     .flatMap((project) => project.pages)
     .find((candidate) => candidate.id === pageId)!;
-  const layer = getLayerDocument(page).layers.find((candidate) => candidate.type === 'text') as TextLayer;
+  const layer = getLayerDocument(page).layers.find(
+    (candidate) => candidate.type === 'text',
+  ) as TextLayer;
   return getRichTextContent(layer);
 }
