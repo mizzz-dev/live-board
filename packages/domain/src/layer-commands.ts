@@ -1,3 +1,4 @@
+import { mergeLayerSelection } from './layer-merge.js';
 import {
   findPage,
   findProject,
@@ -15,7 +16,6 @@ import {
   duplicateLayerTree,
   findLayer,
   getLayerDocument,
-  mergeLayers,
   moveLayer,
   renameLayer,
   updateLayerProperties,
@@ -289,7 +289,7 @@ export function applyLayerCommand(
       };
       break;
     case 'layer.merge':
-      nextDocument = mergeLayers(
+      nextDocument = mergeLayerSelection(
         currentDocument,
         page.id,
         command.sourceLayerIds,
