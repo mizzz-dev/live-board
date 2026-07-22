@@ -1,0 +1,31 @@
+{
+  "name": "@live-board/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail -n renderer,electron-build,electron -c auto \"vite --host 127.0.0.1 --port 5173\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on tcp:127.0.0.1:5173 file:dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "vite build && tsc -p tsconfig.electron.json",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@live-board/domain": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^43.1.1",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10",
+    "wait-on": "^9.0.1"
+  }
+}
