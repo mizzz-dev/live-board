@@ -25,8 +25,26 @@ export interface Workspace {
   schemaVersion: 1;
 }
 
+export interface CreatePageInput {
+  id: PageId;
+  name?: string;
+  width?: number;
+  height?: number;
+  transparent?: boolean;
+}
+
 const DEFAULT_PAGE_WIDTH = 1920;
 const DEFAULT_PAGE_HEIGHT = 1080;
+
+export function createPage(input: CreatePageInput): Page {
+  return {
+    id: input.id,
+    name: input.name?.trim() || '新しいページ',
+    width: input.width ?? DEFAULT_PAGE_WIDTH,
+    height: input.height ?? DEFAULT_PAGE_HEIGHT,
+    transparent: input.transparent ?? true,
+  };
+}
 
 export function createEmptyWorkspace(workspaceId: WorkspaceId): Workspace {
   const pageId = `${workspaceId}:page:1`;
@@ -43,13 +61,10 @@ export function createEmptyWorkspace(workspaceId: WorkspaceId): Workspace {
         activeEditPageId: pageId,
         activeBroadcastPageId: pageId,
         pages: [
-          {
+          createPage({
             id: pageId,
             name: 'ページ 1',
-            width: DEFAULT_PAGE_WIDTH,
-            height: DEFAULT_PAGE_HEIGHT,
-            transparent: true,
-          },
+          }),
         ],
       },
     ],
@@ -79,3 +94,5 @@ function assertPageExists(project: Project, pageId: PageId): void {
     throw new Error(`Page not found: ${pageId}`);
   }
 }
+
+export * from './commands.js';
