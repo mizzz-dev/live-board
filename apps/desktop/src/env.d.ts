@@ -104,7 +104,7 @@ interface Window {
       workspaceId: string;
       revision: number;
       archive: Uint8Array;
-      documentId?: string;
+      documentId?: string | undefined;
       saveAs: boolean;
     }) => Promise<WorkspaceSaveResponse>;
     openWorkspace: (requestId: string) => Promise<WorkspaceOpenResponse>;
