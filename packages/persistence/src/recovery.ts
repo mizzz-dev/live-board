@@ -25,6 +25,7 @@ export interface RecoveryCandidate {
   workspaceId: string;
   revision: number;
   savedAt: string;
+  snapshotSequence: number;
   snapshotSha256: string;
   snapshotByteLength: number;
   operationCountAfterSnapshot: number;
@@ -130,6 +131,7 @@ export function selectRecoveryCandidate(
     workspaceId: latestSnapshot.workspaceId,
     revision: latestSnapshot.revision,
     savedAt: latestSnapshot.occurredAt,
+    snapshotSequence: latestSnapshot.sequence,
     snapshotSha256: latestSnapshot.snapshotSha256,
     snapshotByteLength: latestSnapshot.snapshotByteLength,
     operationCountAfterSnapshot: entries.filter(
