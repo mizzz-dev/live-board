@@ -9,7 +9,7 @@
     "build": "pnpm --filter @live-board/obs-protocol build && pnpm --filter @live-board/overlay build && pnpm --filter @live-board/obs-bridge build && vite build && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "pnpm --filter @live-board/obs-protocol build && vitest run --passWithNoTests"
   },
   "dependencies": {
     "@live-board/domain": "workspace:*",
