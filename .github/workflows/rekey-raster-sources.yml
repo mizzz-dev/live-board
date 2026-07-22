@@ -1,0 +1,35 @@
+name: Rekey Raster Source Layer IDs
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'feat/ivr-244-liveboard-persistence-recovery'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-244-liveboard-persistence-recovery
+          fetch-depth: 0
+      - name: Apply focused patch
+        run: node .github/scripts/rekey-raster-sources.mjs
+      - name: Remove temporary files
+        run: |
+          rm .github/scripts/rekey-raster-sources.mjs
+          rm .github/workflows/rekey-raster-sources.yml
+      - name: Commit focused change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/persistence/src/archive.ts
+          git add .github/scripts/rekey-raster-sources.mjs
+          git add .github/workflows/rekey-raster-sources.yml
+          git commit -m "複製時にRaster由来Layer IDも再生成"
+          git push origin HEAD:feat/ivr-244-liveboard-persistence-recovery
