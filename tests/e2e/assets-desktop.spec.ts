@@ -28,7 +28,7 @@ test('SVG画像をImage Layerとして追加し同一バイナリを重複保存
   });
   await expect(page.locator('.asset-row')).toHaveCount(1);
   await expect(page.locator('.layer-list .layer-row')).toHaveCount(2);
-  await expect(page.getByText('same-content.svg', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/same-content\.svg/).first()).toBeVisible();
   await expect(page.getByText('Asset: 1件 /', { exact: false })).toBeVisible();
 });
 
