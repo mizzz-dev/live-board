@@ -130,9 +130,15 @@ describe('CanvasTool registry', () => {
       begin(sample) {
         return { toolId: 'pen', startedAt: sample, samples: [sample] };
       },
-      move() { return null; },
-      end() { return null; },
-      cancel() {},
+      move() {
+        return null;
+      },
+      end() {
+        return null;
+      },
+      cancel(session) {
+        session.samples.splice(0);
+      },
     };
     const registry = new CanvasToolRegistry().register(tool);
     expect(() => registry.register(tool)).toThrow(/already registered/);
