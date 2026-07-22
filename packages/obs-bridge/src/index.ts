@@ -1,13 +1,19 @@
 import {
   parseBroadcastSnapshot,
   parseObsBridgeClientMessage,
+  parsePageTransition,
   type BroadcastSnapshot,
   type ObsBridgeClientMessage,
   type ObsBridgeServerMessage,
+  type PageTransition,
 } from '@live-board/obs-protocol';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, resolve, sep } from 'node:path';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
@@ -15,6 +21,10 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 const DEFAULT_HOST = '127.0.0.1' as const;
 const DEFAULT_MAX_CONNECTIONS = 4;
 const DEFAULT_MAX_PAYLOAD_BYTES = 64 * 1024;
+const DEFAULT_PAGE_TRANSITION: PageTransition = {
+  type: 'fade',
+  durationMs: 150,
+};
 const TOKEN_BYTES = 32;
 
 export type LoopbackHost = '127.0.0.1' | '::1';
@@ -27,6 +37,7 @@ export interface ObsBridgeOptions {
   maxPayloadBytes?: number;
   overlayRoot?: string;
   initialSnapshot?: BroadcastSnapshot;
+  pageTransition?: PageTransition;
 }
 
 export interface ObsBridgeInfo {
@@ -44,7 +55,11 @@ export interface ObsBridge {
   close(): Promise<void>;
 }
 
-export { type BroadcastSnapshot, type ObsBridgeClientMessage };
+export {
+  type BroadcastSnapshot,
+  type ObsBridgeClientMessage,
+  type PageTransition,
+};
 
 export function isLoopbackAddress(address: string | undefined): boolean {
   return (
@@ -92,7 +107,11 @@ export async function startObsBridge(
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? 0;
   const maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
-  const maxPayloadBytes = options.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
+  const maxPayloadBytes =
+    options.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
+  const pageTransition = parsePageTransition(
+    options.pageTransition ?? DEFAULT_PAGE_TRANSITION,
+  );
 
   validateOptions({ host, port, maxConnections, maxPayloadBytes });
 
@@ -185,20 +204,7 @@ export async function startObsBridge(
     }
   });
 
-  await new Promise<void>((resolvePromise, reject) => {
-    const onError = (error: Error) => {
-      server.off('listening', onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off('error', onError);
-      resolvePromise();
-    };
-
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen({ host, port, exclusive: true });
-  });
+  await listen(server, host, port);
 
   const address = server.address();
 
@@ -232,11 +238,20 @@ export async function startObsBridge(
         throw new Error('OBS_BRIDGE_STALE_REVISION');
       }
 
+      const previousSnapshot = latestSnapshot;
       latestSnapshot = snapshot;
-      const message: ObsBridgeServerMessage = {
-        type: 'snapshot',
-        snapshot,
-      };
+      const message: ObsBridgeServerMessage =
+        previousSnapshot !== undefined &&
+        previousSnapshot.pageId !== snapshot.pageId
+          ? {
+              type: 'page.changed',
+              snapshot,
+              transition: pageTransition,
+            }
+          : {
+              type: 'snapshot',
+              snapshot,
+            };
 
       for (const client of webSocketServer.clients) {
         if (client.readyState === 1) {
@@ -270,6 +285,27 @@ export async function startObsBridge(
   };
 }
 
+async function listen(
+  server: ReturnType<typeof createServer>,
+  host: LoopbackHost,
+  port: number,
+): Promise<void> {
+  await new Promise<void>((resolvePromise, reject) => {
+    const onError = (error: Error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off('error', onError);
+      resolvePromise();
+    };
+
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen({ host, port, exclusive: true });
+  });
+}
+
 async function handleHttpRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -278,7 +314,9 @@ async function handleHttpRequest(
   overlayRoot: string | undefined,
 ): Promise<void> {
   if (!isLoopbackAddress(request.socket.remoteAddress)) {
-    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.writeHead(403, {
+      'Content-Type': 'text/plain; charset=utf-8',
+    });
     response.end('Forbidden');
     return;
   }
@@ -295,11 +333,16 @@ async function handleHttpRequest(
     return;
   }
 
-  if (request.method === 'GET' && requestUrl.pathname.startsWith('/overlay/')) {
+  if (
+    request.method === 'GET' &&
+    requestUrl.pathname.startsWith('/overlay/')
+  ) {
     const candidateToken = requestUrl.pathname.slice('/overlay/'.length);
 
     if (!isValidToken(token, candidateToken)) {
-      response.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.writeHead(401, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
       response.end('Unauthorized');
       return;
     }
@@ -332,10 +375,15 @@ async function handleHttpRequest(
     requestUrl.pathname.startsWith('/assets/') &&
     overlayRoot !== undefined
   ) {
-    const assetPath = resolveStaticAssetPath(overlayRoot, requestUrl.pathname);
+    const assetPath = resolveStaticAssetPath(
+      overlayRoot,
+      requestUrl.pathname,
+    );
 
     if (assetPath === null) {
-      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.writeHead(400, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
       response.end('Bad Request');
       return;
     }
@@ -347,13 +395,17 @@ async function handleHttpRequest(
       });
       response.end(content);
     } catch {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.writeHead(404, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
       response.end('Not Found');
     }
     return;
   }
 
-  response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+  response.writeHead(404, {
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
   response.end('Not Found');
 }
 
@@ -385,7 +437,10 @@ function registerClientMessageHandler(
         snapshot !== undefined &&
         message.lastRevision !== snapshot.revision
       ) {
-        sendServerMessage(webSocket, { type: 'snapshot', snapshot });
+        sendServerMessage(webSocket, {
+          type: 'snapshot',
+          snapshot,
+        });
       }
     } catch {
       webSocket.close(1008, 'Invalid message');
@@ -410,7 +465,11 @@ function validateOptions(options: {
     throw new Error('OBS_BRIDGE_HOST_MUST_BE_LOOPBACK');
   }
 
-  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
+  if (
+    !Number.isInteger(options.port) ||
+    options.port < 0 ||
+    options.port > 65535
+  ) {
     throw new Error('OBS_BRIDGE_INVALID_PORT');
   }
 
@@ -431,7 +490,10 @@ function validateOptions(options: {
   }
 }
 
-function isValidToken(expectedToken: string, candidateToken: string | null): boolean {
+function isValidToken(
+  expectedToken: string,
+  candidateToken: string | null,
+): boolean {
   if (candidateToken === null) {
     return false;
   }
@@ -439,7 +501,10 @@ function isValidToken(expectedToken: string, candidateToken: string | null): boo
   const expected = Buffer.from(expectedToken, 'utf8');
   const candidate = Buffer.from(candidateToken, 'utf8');
 
-  return expected.length === candidate.length && timingSafeEqual(expected, candidate);
+  return (
+    expected.length === candidate.length &&
+    timingSafeEqual(expected, candidate)
+  );
 }
 
 function rejectUpgrade(
@@ -463,7 +528,10 @@ function normalizeOrigin(origin: string): string {
   return url.origin;
 }
 
-function isAllowedOrigin(origin: string, allowedOrigins: ReadonlySet<string>): boolean {
+function isAllowedOrigin(
+  origin: string,
+  allowedOrigins: ReadonlySet<string>,
+): boolean {
   try {
     return allowedOrigins.has(normalizeOrigin(origin));
   } catch {
