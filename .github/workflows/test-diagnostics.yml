@@ -51,6 +51,17 @@ jobs:
           pnpm --filter @live-board/desktop test > desktop-test.log 2>&1
           echo "$?" > desktop-test-status.txt
           exit 0
+      - name: Build applications
+        run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Capture E2E output
+        shell: bash
+        run: |
+          set +e
+          pnpm test:e2e > e2e.log 2>&1
+          echo "$?" > e2e-status.txt
+          exit 0
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
         with:
@@ -64,4 +75,8 @@ jobs:
             persistence-test-status.txt
             desktop-test.log
             desktop-test-status.txt
+            e2e.log
+            e2e-status.txt
+            test-results
+          if-no-files-found: ignore
           retention-days: 1
