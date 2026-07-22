@@ -1,3 +1,11 @@
+import { type ProjectCommand } from './commands.js';
+import {
+  createWorkspaceCommandState,
+  dispatchProjectCommand,
+  redoProjectCommand,
+  undoProjectCommand,
+  type WorkspaceCommandState,
+} from './history.js';
 import {
   cloneLayerDocument,
   type LayerDocument,
@@ -7,24 +15,15 @@ import {
   type LayerCommand,
 } from './layer-commands.js';
 import {
-  dispatchProjectCommand,
-  redoProjectCommand,
-  undoProjectCommand,
-  createWorkspaceCommandState,
-  type HistoryStack,
-  type WorkspaceCommandState,
-} from './history.js';
-import {
   findPage,
   findProject,
   replaceProject,
   type Page,
   type PageId,
   type Project,
-  type ProjectCommand,
   type ProjectId,
   type Workspace,
-} from './index.js';
+} from './model.js';
 
 export interface LayerHistoryEntry {
   historyId: string;
@@ -270,7 +269,17 @@ const EMPTY_LAYER_HISTORY: LayerHistoryStack = Object.freeze({
 });
 
 function utf8ByteLength(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
+  let bytes = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    bytes +=
+      codePoint <= 0x7f
+        ? 1
+        : codePoint <= 0x7ff
+          ? 2
+          : codePoint <= 0xffff
+            ? 3
+            : 4;
+  }
+  return bytes;
 }
-
-export type { HistoryStack };
