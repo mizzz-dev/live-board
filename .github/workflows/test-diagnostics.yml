@@ -30,6 +30,13 @@ jobs:
           pnpm lint > lint.log 2>&1
           echo "$?" > lint-status.txt
           exit 0
+      - name: Capture typecheck output
+        shell: bash
+        run: |
+          set +e
+          pnpm typecheck > typecheck.log 2>&1
+          echo "$?" > typecheck-status.txt
+          exit 0
       - name: Capture persistence test output
         shell: bash
         run: |
@@ -51,6 +58,8 @@ jobs:
           path: |
             lint.log
             lint-status.txt
+            typecheck.log
+            typecheck-status.txt
             persistence-test.log
             persistence-test-status.txt
             desktop-test.log
