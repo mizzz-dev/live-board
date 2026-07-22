@@ -35,6 +35,26 @@ body,
   place-items: stretch;
 }
 
+.page-transition-fade {
+  animation: page-fade-in var(--page-transition-duration, 150ms) ease-out both;
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-fade {
+    animation-duration: 1ms;
+  }
+}
+
 .connection-state {
   display: flex;
   align-items: center;
