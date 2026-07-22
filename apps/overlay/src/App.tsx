@@ -1,8 +1,9 @@
 import {
   parseObsBridgeServerMessage,
   type BroadcastSnapshot,
+  type PageTransition,
 } from '@live-board/obs-protocol';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 type ConnectionState =
   | 'preview'
@@ -13,11 +14,16 @@ type ConnectionState =
 const RECONNECT_BASE_DELAY_MS = 250;
 const RECONNECT_MAX_DELAY_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
+const NO_TRANSITION: PageTransition = { type: 'none', durationMs: 0 };
 
 export function App() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('connecting');
   const [snapshot, setSnapshot] = useState<BroadcastSnapshot | null>(null);
+  const [transition, setTransition] =
+    useState<PageTransition>(NO_TRANSITION);
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  const [revisionGapCount, setRevisionGapCount] = useState(0);
   const latestRevisionRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -43,6 +49,17 @@ export function App() {
       if (heartbeatTimer !== undefined) {
         window.clearInterval(heartbeatTimer);
         heartbeatTimer = undefined;
+      }
+    };
+
+    const requestLatestSnapshot = (lastRevision: number | null) => {
+      if (webSocket?.readyState === WebSocket.OPEN) {
+        webSocket.send(
+          JSON.stringify({
+            type: 'snapshot.request',
+            lastRevision,
+          }),
+        );
       }
     };
 
@@ -76,12 +93,7 @@ export function App() {
       webSocket.addEventListener('open', () => {
         reconnectAttempt = 0;
         setConnectionState('connected');
-        webSocket?.send(
-          JSON.stringify({
-            type: 'snapshot.request',
-            lastRevision: latestRevisionRef.current,
-          }),
-        );
+        requestLatestSnapshot(latestRevisionRef.current);
         heartbeatTimer = window.setInterval(() => {
           if (webSocket?.readyState === WebSocket.OPEN) {
             webSocket.send(
@@ -93,16 +105,45 @@ export function App() {
 
       webSocket.addEventListener('message', (event) => {
         try {
-          const message = parseObsBridgeServerMessage(JSON.parse(String(event.data)));
+          const message = parseObsBridgeServerMessage(
+            JSON.parse(String(event.data)),
+          );
+
+          if (message.type === 'pong') {
+            return;
+          }
+
+          const incomingSnapshot = message.snapshot;
+          const currentRevision = latestRevisionRef.current;
 
           if (
-            message.type === 'snapshot' &&
-            (latestRevisionRef.current === null ||
-              message.snapshot.revision > latestRevisionRef.current)
+            currentRevision !== null &&
+            incomingSnapshot.revision > currentRevision + 1
           ) {
-            latestRevisionRef.current = message.snapshot.revision;
-            setSnapshot(message.snapshot);
+            setRevisionGapCount((count) => count + 1);
+            requestLatestSnapshot(currentRevision);
           }
+
+          if (
+            currentRevision !== null &&
+            incomingSnapshot.revision <= currentRevision
+          ) {
+            return;
+          }
+
+          latestRevisionRef.current = incomingSnapshot.revision;
+          setLastLatencyMs(
+            Math.max(
+              0,
+              Date.now() - Date.parse(incomingSnapshot.generatedAt),
+            ),
+          );
+          setTransition(
+            message.type === 'page.changed'
+              ? message.transition
+              : NO_TRANSITION,
+          );
+          setSnapshot(incomingSnapshot);
         } catch {
           webSocket?.close(1008, 'Invalid server message');
         }
@@ -148,18 +189,29 @@ export function App() {
     snapshot.canvas.background.type === 'transparent'
       ? 'transparent'
       : snapshot.canvas.background.value;
+  const transitionClassName =
+    transition.type === 'fade' ? ' page-transition-fade' : '';
+  const outputStyle = {
+    background,
+    '--page-transition-duration': `${transition.durationMs}ms`,
+  } as CSSProperties;
 
   return (
     <main
-      className="overlay-root broadcast-output"
+      key={snapshot.pageId}
+      className={`overlay-root broadcast-output${transitionClassName}`}
       data-page-id={snapshot.pageId}
       data-revision={snapshot.revision}
       data-canvas-width={snapshot.canvas.width}
       data-canvas-height={snapshot.canvas.height}
-      style={{ background }}
+      data-latency-ms={lastLatencyMs ?? undefined}
+      data-revision-gap-count={revisionGapCount}
+      style={outputStyle}
     >
       <span className="visually-hidden" aria-live="polite">
-        {snapshot.pageName} revision {snapshot.revision} / {connectionLabel(connectionState)}
+        {snapshot.pageName} revision {snapshot.revision} /{' '}
+        {connectionLabel(connectionState)} / latency {lastLatencyMs ?? 0} ms /
+        revision gaps {revisionGapCount}
       </span>
     </main>
   );
