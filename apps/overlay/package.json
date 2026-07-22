@@ -11,7 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@live-board/domain": "workspace:*",
+    "@live-board/obs-protocol": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
