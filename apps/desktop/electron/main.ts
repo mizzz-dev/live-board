@@ -1,12 +1,21 @@
 import { startObsBridge, type ObsBridge } from '@live-board/obs-bridge';
-import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  session,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   BROADCAST_PUBLISH_CHANNEL,
+  OBS_COPY_SOURCE_URL_CHANNEL,
   parsePublishBroadcastSnapshotRequest,
   parseSecurityStatusRequest,
   SECURITY_STATUS_CHANNEL,
+  type CopyObsSourceUrlResponse,
   type PublishBroadcastSnapshotResponse,
   type SecurityStatus,
 } from './contracts.js';
@@ -104,6 +113,7 @@ function registerIpcHandlers(
 ): void {
   ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
   ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
+  ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
 
   ipcMain.handle(SECURITY_STATUS_CHANNEL, (event, input: unknown) => {
     assertTrustedEvent(event, trustConfig);
@@ -134,6 +144,18 @@ function registerIpcHandlers(
     const response: PublishBroadcastSnapshotResponse = {
       requestId: request.requestId,
       acceptedRevision: bridge.publishSnapshot(request.snapshot),
+    };
+
+    return response;
+  });
+
+  ipcMain.handle(OBS_COPY_SOURCE_URL_CHANNEL, (event, input: unknown) => {
+    assertTrustedEvent(event, trustConfig);
+    const request = parseSecurityStatusRequest(input);
+    clipboard.writeText(bridge.info.overlayUrl);
+    const response: CopyObsSourceUrlResponse = {
+      requestId: request.requestId,
+      copied: true,
     };
 
     return response;
@@ -200,6 +222,7 @@ app.on('before-quit', (event) => {
       shutdownComplete = true;
       ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
       ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
+      ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
       app.quit();
     });
 });
