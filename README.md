@@ -15,10 +15,20 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M0「リポジトリ・デスクトップ基盤」の初期実装です。
-Electron Editor、OBS Overlay、共有Domain、共有設定、CI、E2E Smoke Testの土台を追加しています。
+M1「ワークスペース・ページ・OBS同期」のDomain実装を進めています。
 
-描画、OBS WebSocket同期、永続化、画像処理は後続Issueで実装します。
+実装済み:
+
+- Electron Editor / OBS Overlay / pnpm workspace
+- Electron CSP・IPC送信元検証・権限制限
+- `127.0.0.1` / `::1`限定OBSローカルブリッジの安全境界
+- Workspace / Project / Pageモデル
+- ページ追加・複製・削除・並び替えCommand
+- 編集ページと配信ページの独立切り替え
+- Project単位のUndo / Redo履歴
+- lint、型検査、Unit Test、production build、E2E
+
+描画、OBS snapshot / revision同期、永続化、画像処理は後続Issueで実装します。
 
 ## 必要環境
 
@@ -42,7 +52,7 @@ pnpm install
 pnpm dev:desktop
 ```
 
-Vite Renderer、Electron Main/PreloadのTypeScript監視、Electronを同時起動します。
+Vite Renderer、OBSブリッジ、Electron Main/PreloadのTypeScript監視、Electronを同時起動します。
 RendererからNode.js APIへ直接アクセスできない構成です。
 
 ### OBS Overlay単体
@@ -52,7 +62,7 @@ pnpm dev:overlay
 ```
 
 開発用URLは`http://127.0.0.1:5174`です。
-現時点では接続待機画面のみで、ローカルOBSブリッジは`IVR-238`と`IVR-240`で実装します。
+現時点では接続待機画面のみで、snapshot / revision同期は`IVR-240`で実装します。
 
 ## 品質確認
 
@@ -65,7 +75,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、初期画面を確認します。
+`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、ページ操作と初期画面を確認します。
 Electronプロセス自体の自動起動試験は配布設定と合わせて後続で追加します。
 
 ## モノレポ構成
@@ -76,7 +86,8 @@ apps/
   overlay/          OBS Browser Source向けReactアプリ
 packages/
   config/           共有TypeScript設定
-  domain/           UI・Electronへ依存しないDomain Model
+  domain/           Workspace / Project / Page / Command履歴
+  obs-bridge/       loopback限定HTTP / WebSocket境界
 ```
 
 将来追加するパッケージは、[アーキテクチャ](docs/architecture.md)の責務境界に従います。
@@ -94,9 +105,9 @@ packages/
 
 - Desktop shell: Electron
 - UI: React + TypeScript + Vite
-- State: Zustand（UI状態）+ Command/Event層（履歴・永続化対象）
+- State: React UI状態 + Domain Command/Event層（履歴・永続化対象）
 - Local storage: SQLite または IndexedDB、アセットはファイル分離
-- OBS bridge: `127.0.0.1` 限定 HTTP + WebSocket
+- OBS bridge: `127.0.0.1` / `::1`限定 HTTP + WebSocket
 - Rendering: MVPは Canvas 2D、負荷計測後に OffscreenCanvas / WebGL を段階導入
 - Testing: Vitest + Playwright
 
