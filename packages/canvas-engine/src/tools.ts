@@ -139,7 +139,9 @@ export function smoothPointerSamples(
   smoothing: number,
 ): ToolPointerSample[] {
   const radius = Math.round(clamp(smoothing, 0, 1) * 8);
-  if (radius === 0 || samples.length < 3) return samples.map((sample) => ({ ...sample }));
+  if (radius === 0 || samples.length < 3) {
+    return samples.map((sample) => ({ ...sample }));
+  }
   return samples.map((sample, index) => {
     const start = Math.max(0, index - radius);
     const end = Math.min(samples.length - 1, index + radius);
@@ -191,9 +193,7 @@ function createStrokeTool(id: 'pen' | 'eraser'): CanvasTool {
         },
       };
     },
-    cancel(session) {
-      session.samples.splice(0);
-    },
+    cancel: clearSession,
   };
 }
 
@@ -220,7 +220,7 @@ function createBucketTool(): CanvasTool {
         },
       };
     },
-    cancel() {},
+    cancel: clearSession,
   };
 }
 
@@ -238,7 +238,7 @@ function createEyedropperTool(): CanvasTool {
       const color = context.sampleColor(session.startedAt);
       return color === null ? null : { type: 'color', color };
     },
-    cancel() {},
+    cancel: clearSession,
   };
 }
 
@@ -266,8 +266,13 @@ function createPanTool(): CanvasTool {
     end() {
       return null;
     },
-    cancel() {},
+    cancel: clearSession,
   };
+}
+
+function clearSession(session: CanvasToolSession): void {
+  session.samples.splice(0);
+  delete session.lastScreenPoint;
 }
 
 function toRasterPoint(sample: ToolPointerSample): RasterPoint {
