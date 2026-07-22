@@ -1,4 +1,4 @@
-name: Build AppV2 Persistence Patch
+name: Build Persistence Patch
 
 on:
   pull_request:
@@ -15,9 +15,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Apply focused patch
         run: node .github/scripts/patch-appv2.mjs
-      - name: Upload patched AppV2
+      - name: Upload patched files
         uses: actions/upload-artifact@v4
         with:
-          name: patched-appv2
-          path: apps/desktop/src/AppV2.tsx
+          name: patched-persistence-files
+          path: |
+            apps/desktop/src/AppV2.tsx
+            apps/desktop/electron/persistence-service.ts
+            packages/persistence/src/archive.ts
           retention-days: 1
