@@ -1,6 +1,15 @@
+import {
+  parseBroadcastSnapshot,
+  parseObsBridgeClientMessage,
+  type BroadcastSnapshot,
+  type ObsBridgeClientMessage,
+  type ObsBridgeServerMessage,
+} from '@live-board/obs-protocol';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { extname, resolve, sep } from 'node:path';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 const DEFAULT_HOST = '127.0.0.1' as const;
@@ -16,6 +25,8 @@ export interface ObsBridgeOptions {
   allowedOrigins?: readonly string[];
   maxConnections?: number;
   maxPayloadBytes?: number;
+  overlayRoot?: string;
+  initialSnapshot?: BroadcastSnapshot;
 }
 
 export interface ObsBridgeInfo {
@@ -28,15 +39,12 @@ export interface ObsBridgeInfo {
 export interface ObsBridge {
   readonly info: ObsBridgeInfo;
   getConnectionCount(): number;
+  getLatestRevision(): number | null;
+  publishSnapshot(snapshot: BroadcastSnapshot): number;
   close(): Promise<void>;
 }
 
-interface PingMessage {
-  type: 'ping';
-  timestamp: number;
-}
-
-export type ObsBridgeClientMessage = PingMessage;
+export { type BroadcastSnapshot, type ObsBridgeClientMessage };
 
 export function isLoopbackAddress(address: string | undefined): boolean {
   return (
@@ -64,19 +72,18 @@ export function parseClientMessage(
     throw new Error('OBS_BRIDGE_INVALID_JSON');
   }
 
-  if (!isRecord(parsed) || parsed.type !== 'ping') {
-    throw new Error('OBS_BRIDGE_UNKNOWN_MESSAGE');
-  }
+  try {
+    return parseObsBridgeClientMessage(parsed);
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      error.message === 'OBS_PROTOCOL_UNKNOWN_CLIENT_MESSAGE'
+    ) {
+      throw new Error('OBS_BRIDGE_UNKNOWN_MESSAGE');
+    }
 
-  if (
-    typeof parsed.timestamp !== 'number' ||
-    !Number.isFinite(parsed.timestamp) ||
-    parsed.timestamp < 0
-  ) {
     throw new Error('OBS_BRIDGE_INVALID_MESSAGE');
   }
-
-  return { type: 'ping', timestamp: parsed.timestamp };
 }
 
 export async function startObsBridge(
@@ -100,9 +107,26 @@ export async function startObsBridge(
   });
 
   let ownOrigin = '';
+  let latestSnapshot =
+    options.initialSnapshot === undefined
+      ? undefined
+      : parseBroadcastSnapshot(options.initialSnapshot);
 
   const server = createServer((request, response) => {
-    handleHttpRequest(request, response, token);
+    void handleHttpRequest(
+      request,
+      response,
+      token,
+      ownOrigin,
+      options.overlayRoot,
+    ).catch(() => {
+      if (!response.headersSent) {
+        response.writeHead(500, {
+          'Content-Type': 'text/plain; charset=utf-8',
+        });
+      }
+      response.end('Internal Server Error');
+    });
   });
 
   server.on('clientError', (_error, socket) => {
@@ -147,17 +171,28 @@ export async function startObsBridge(
   });
 
   webSocketServer.on('connection', (webSocket) => {
-    registerClientMessageHandler(webSocket, maxPayloadBytes);
+    registerClientMessageHandler(
+      webSocket,
+      maxPayloadBytes,
+      () => latestSnapshot,
+    );
+
+    if (latestSnapshot !== undefined) {
+      sendServerMessage(webSocket, {
+        type: 'snapshot',
+        snapshot: latestSnapshot,
+      });
+    }
   });
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolvePromise, reject) => {
     const onError = (error: Error) => {
       server.off('listening', onListening);
       reject(error);
     };
     const onListening = () => {
       server.off('error', onError);
-      resolve();
+      resolvePromise();
     };
 
     server.once('error', onError);
@@ -186,23 +221,48 @@ export async function startObsBridge(
   return {
     info,
     getConnectionCount: () => webSocketServer.clients.size,
+    getLatestRevision: () => latestSnapshot?.revision ?? null,
+    publishSnapshot: (input) => {
+      const snapshot = parseBroadcastSnapshot(input);
+
+      if (
+        latestSnapshot !== undefined &&
+        snapshot.revision <= latestSnapshot.revision
+      ) {
+        throw new Error('OBS_BRIDGE_STALE_REVISION');
+      }
+
+      latestSnapshot = snapshot;
+      const message: ObsBridgeServerMessage = {
+        type: 'snapshot',
+        snapshot,
+      };
+
+      for (const client of webSocketServer.clients) {
+        if (client.readyState === 1) {
+          sendServerMessage(client, message);
+        }
+      }
+
+      return snapshot.revision;
+    },
     close: async () => {
       for (const client of webSocketServer.clients) {
         client.terminate();
       }
 
       await Promise.all([
-        new Promise<void>((resolve) => {
-          webSocketServer.close(() => resolve());
+        new Promise<void>((resolvePromise) => {
+          webSocketServer.close(() => resolvePromise());
         }),
-        new Promise<void>((resolve, reject) => {
+        new Promise<void>((resolvePromise, reject) => {
           server.close((error) => {
             if (error !== undefined) {
               reject(error);
               return;
             }
 
-            resolve();
+            resolvePromise();
           });
         }),
       ]);
@@ -210,15 +270,24 @@ export async function startObsBridge(
   };
 }
 
-function handleHttpRequest(
+async function handleHttpRequest(
   request: IncomingMessage,
   response: ServerResponse,
   token: string,
-): void {
+  ownOrigin: string,
+  overlayRoot: string | undefined,
+): Promise<void> {
+  if (!isLoopbackAddress(request.socket.remoteAddress)) {
+    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Forbidden');
+    return;
+  }
+
   const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
 
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('Referrer-Policy', 'no-referrer');
 
   if (request.method === 'GET' && requestUrl.pathname === '/health') {
     response.writeHead(204);
@@ -235,19 +304,52 @@ function handleHttpRequest(
       return;
     }
 
+    const html =
+      overlayRoot === undefined
+        ? createFallbackOverlayDocument()
+        : await readFile(resolve(overlayRoot, 'index.html'), 'utf8');
+    const webSocketOrigin = ownOrigin.replace(/^http:/, 'ws:');
+
     response.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': [
         "default-src 'none'",
-        "style-src 'unsafe-inline'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        `connect-src 'self' ${webSocketOrigin}`,
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
       ].join('; '),
     });
-    response.end(
-      '<!doctype html><html lang="ja"><meta charset="utf-8"><title>Live Board Overlay</title><style>html,body{margin:0;background:transparent;color:#fff;font-family:sans-serif}main{padding:16px}</style><main>Live Board Overlay bridge is ready.</main></html>',
-    );
+    response.end(html);
+    return;
+  }
+
+  if (
+    request.method === 'GET' &&
+    requestUrl.pathname.startsWith('/assets/') &&
+    overlayRoot !== undefined
+  ) {
+    const assetPath = resolveStaticAssetPath(overlayRoot, requestUrl.pathname);
+
+    if (assetPath === null) {
+      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Bad Request');
+      return;
+    }
+
+    try {
+      const content = await readFile(assetPath);
+      response.writeHead(200, {
+        'Content-Type': contentTypeForPath(assetPath),
+      });
+      response.end(content);
+    } catch {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Not Found');
+    }
     return;
   }
 
@@ -258,6 +360,7 @@ function handleHttpRequest(
 function registerClientMessageHandler(
   webSocket: WebSocket,
   maxPayloadBytes: number,
+  getLatestSnapshot: () => BroadcastSnapshot | undefined,
 ): void {
   webSocket.on('message', (rawData, isBinary) => {
     if (isBinary) {
@@ -267,11 +370,34 @@ function registerClientMessageHandler(
 
     try {
       const message = parseClientMessage(rawData, maxPayloadBytes);
-      webSocket.send(JSON.stringify({ type: 'pong', timestamp: message.timestamp }));
+
+      if (message.type === 'ping') {
+        sendServerMessage(webSocket, {
+          type: 'pong',
+          timestamp: message.timestamp,
+        });
+        return;
+      }
+
+      const snapshot = getLatestSnapshot();
+
+      if (
+        snapshot !== undefined &&
+        message.lastRevision !== snapshot.revision
+      ) {
+        sendServerMessage(webSocket, { type: 'snapshot', snapshot });
+      }
     } catch {
       webSocket.close(1008, 'Invalid message');
     }
   });
+}
+
+function sendServerMessage(
+  webSocket: WebSocket,
+  message: ObsBridgeServerMessage,
+): void {
+  webSocket.send(JSON.stringify(message));
 }
 
 function validateOptions(options: {
@@ -361,6 +487,51 @@ function rawDataToText(rawData: RawData): string {
   return rawData.toString('utf8');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function resolveStaticAssetPath(
+  overlayRoot: string,
+  requestPath: string,
+): string | null {
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(requestPath.slice(1));
+  } catch {
+    return null;
+  }
+
+  if (decodedPath.includes('\\') || decodedPath.includes('\0')) {
+    return null;
+  }
+
+  const root = resolve(overlayRoot);
+  const candidate = resolve(root, decodedPath);
+
+  if (!candidate.startsWith(`${root}${sep}`)) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function contentTypeForPath(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case '.js':
+      return 'text/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.woff2':
+      return 'font/woff2';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+function createFallbackOverlayDocument(): string {
+  return '<!doctype html><html lang="ja"><meta charset="utf-8"><title>Live Board Overlay</title><style>html,body{margin:0;background:transparent;color:#fff;font-family:sans-serif}main{padding:16px}</style><main>Live Board Overlay assets are not configured.</main></html>';
 }
