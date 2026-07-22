@@ -4,7 +4,26 @@ export * from './history.js';
 export * from './layers.js';
 export * from './layer-merge.js';
 export * from './layer-commands.js';
-export * from './layer-history.js';
+export {
+  canRedoLayer,
+  canUndoLayer,
+  clearLayerHistory,
+  createLayerWorkspaceCommandState,
+  dispatchProjectCommandWithLayerHistory,
+  getLayerHistory,
+  redoProjectCommandWithLayerHistory,
+  undoProjectCommandWithLayerHistory,
+} from './layer-history.js';
+export type {
+  LayerHistoryEntry,
+  LayerHistoryStack,
+  LayerWorkspaceCommandState,
+} from './layer-history.js';
+export {
+  dispatchLayerCommand,
+  redoLayerCommand,
+  undoLayerCommand,
+} from './canvas-layer-history.js';
 export {
   IDENTITY_LAYER_TRANSFORM,
   assertLayerTransform,
