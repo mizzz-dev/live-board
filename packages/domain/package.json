@@ -16,6 +16,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@live-board/obs-protocol": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^4.1.10"
   }
