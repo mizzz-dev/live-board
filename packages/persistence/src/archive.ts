@@ -633,7 +633,11 @@ function rekeyLayer(
       type: 'raster',
       content: {
         ...cloneJson(layer.content),
-        sourceLayerIds: layer.content.sourceLayerIds.map((sourceId) => idMap.get(sourceId) ?? sourceId),
+        sourceLayerIds: layer.content.sourceLayerIds.map(
+          (sourceId) =>
+            idMap.get(sourceId) ??
+            `${pageId}:source:${sha256Hex(encodeUtf8(sourceId)).slice(0, 16)}`,
+        ),
       },
     };
   }
