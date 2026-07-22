@@ -6,7 +6,7 @@ import {
   parsePageTransition,
   parseRasterDrawing,
   type BroadcastSnapshot,
-} from '../src/protocol-v2.js';
+} from '../src/protocol-v3.js';
 
 const identityTransform = {
   x: 0,
@@ -60,6 +60,7 @@ const snapshot: BroadcastSnapshot = {
           strokes: [
             {
               id: 'stroke-1',
+              sequence: 1,
               tool: 'pen',
               pointerType: 'pen',
               color: '#FF3366',
@@ -95,6 +96,7 @@ const snapshot: BroadcastSnapshot = {
           fills: [
             {
               id: 'fill-1',
+              sequence: 2,
               x: 100,
               y: 200,
               color: '#00AAFFFF',
@@ -130,7 +132,7 @@ describe('OBS protocol', () => {
     expect(parseBroadcastSnapshot(snapshot)).toEqual(snapshot);
   });
 
-  it('pressure・tilt・Fill toleranceの境界を検証する', () => {
+  it('pressure・tilt・Fill tolerance・操作順序の境界を検証する', () => {
     const raster = snapshot.layers[1];
     expect(raster?.type).toBe('raster');
     if (raster?.type !== 'raster') throw new Error('Raster fixture missing');
@@ -146,6 +148,11 @@ describe('OBS protocol', () => {
     invalidTolerance.fills[0]!.tolerance = 256;
     expect(() => parseRasterDrawing(invalidTolerance)).toThrow(
       'OBS_PROTOCOL_INVALID_RASTER_FILL',
+    );
+    const invalidSequence = structuredClone(raster.content.drawing);
+    invalidSequence.strokes[0]!.sequence = 0;
+    expect(() => parseRasterDrawing(invalidSequence)).toThrow(
+      'OBS_PROTOCOL_INVALID_RASTER_SEQUENCE',
     );
   });
 
@@ -196,7 +203,11 @@ describe('OBS protocol', () => {
     expect(() =>
       parseBroadcastSnapshot({
         ...snapshot,
-        layers: [snapshot.layers[0], snapshot.layers[1], { ...textLayer, opacity: 1.1 }],
+        layers: [
+          snapshot.layers[0],
+          snapshot.layers[1],
+          { ...textLayer, opacity: 1.1 },
+        ],
       }),
     ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
     expect(() =>
