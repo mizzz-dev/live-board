@@ -68,30 +68,38 @@ test('矩形・楕円・投げ縄をPointer操作で作成できる', async ({ p
   const surface = page.getByTestId('canvas-surface');
   const box = await surface.boundingBox();
   expect(box).not.toBeNull();
+  const startX = box!.x + box!.width * 0.4;
+  const startY = box!.y + box!.height * 0.4;
+  const endX = box!.x + box!.width * 0.6;
+  const endY = box!.y + box!.height * 0.6;
 
   for (const [button, label] of [
     ['矩形選択', 'rectangle選択範囲'],
     ['楕円選択', 'ellipse選択範囲'],
   ] as const) {
     await page.getByRole('button', { name: button, exact: true }).click();
-    await page.mouse.move(box!.x + 300, box!.y + 200);
+    await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(box!.x + 480, box!.y + 320, { steps: 5 });
+    await page.mouse.move(endX, endY, { steps: 5 });
     await page.mouse.up();
     await expect(page.getByLabel(label)).toBeVisible();
   }
 
   await page.getByRole('button', { name: '投げ縄選択', exact: true }).click();
-  await page.mouse.move(box!.x + 300, box!.y + 200);
+  await page.mouse.move(startX, startY);
   await page.mouse.down();
-  for (const point of [
-    [420, 200],
-    [480, 300],
-    [360, 360],
-    [280, 280],
-    [300, 200],
+  for (const [xRatio, yRatio] of [
+    [0.58, 0.4],
+    [0.62, 0.55],
+    [0.5, 0.65],
+    [0.36, 0.55],
+    [0.4, 0.4],
   ]) {
-    await page.mouse.move(box!.x + point[0], box!.y + point[1], { steps: 3 });
+    await page.mouse.move(
+      box!.x + box!.width * xRatio,
+      box!.y + box!.height * yRatio,
+      { steps: 3 },
+    );
   }
   await page.mouse.up();
   await expect(page.getByLabel('lasso選択範囲')).toBeVisible();
