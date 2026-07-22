@@ -20,6 +20,11 @@ import {
   type SecurityStatus,
 } from './contracts.js';
 import {
+  registerPersistenceIpcHandlers,
+  removePersistenceIpcHandlers,
+} from './persistence-ipc.js';
+import { createWorkspacePersistenceService } from './persistence-service.js';
+import {
   assertTrustedIpcSender,
   createRendererContentSecurityPolicy,
   installContentSecurityPolicy,
@@ -34,6 +39,7 @@ const developmentServerUrl = process.env.VITE_DEV_SERVER_URL;
 let obsBridge: ObsBridge | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
+let removeRegisteredPersistenceHandlers: (() => void) | undefined;
 
 async function createMainWindow(
   rendererEntryUrl: string,
@@ -173,6 +179,11 @@ async function initializeApplication(): Promise<void> {
   );
   installPermissionDenyPolicy(session.defaultSession);
 
+  const persistenceService = createWorkspacePersistenceService(
+    join(app.getPath('userData'), 'persistence'),
+  );
+  await persistenceService.initialize();
+
   obsBridge = await startObsBridge({
     allowedOrigins:
       developmentServerUrl === undefined
@@ -181,6 +192,10 @@ async function initializeApplication(): Promise<void> {
     overlayRoot: join(currentDirectory, '../../overlay/dist'),
   });
   registerIpcHandlers(trustConfig, obsBridge);
+  removeRegisteredPersistenceHandlers = registerPersistenceIpcHandlers(
+    trustConfig,
+    persistenceService,
+  );
 
   await createMainWindow(rendererEntryUrl, trustConfig);
 
@@ -206,23 +221,24 @@ void app
   });
 
 app.on('before-quit', (event) => {
-  if (obsBridge === undefined || shutdownComplete) {
-    return;
-  }
-
+  if (shutdownComplete) return;
   event.preventDefault();
 
-  shutdownPromise ??= obsBridge
-    .close()
+  shutdownPromise ??= Promise.resolve()
+    .then(async () => {
+      if (obsBridge !== undefined) await obsBridge.close();
+    })
     .catch((error: unknown) => {
       const errorName = error instanceof Error ? error.name : 'UnknownError';
-      console.error('[Live Board] OBS bridge shutdown failed', { errorName });
+      console.error('[Live Board] shutdown failed', { errorName });
     })
     .finally(() => {
       shutdownComplete = true;
       ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
       ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
       ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
+      removeRegisteredPersistenceHandlers?.();
+      removePersistenceIpcHandlers();
       app.quit();
     });
 });
