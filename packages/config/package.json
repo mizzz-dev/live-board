@@ -1,0 +1,8 @@
+{
+  "name": "@live-board/config",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "tsconfig"
+  ]
+}
