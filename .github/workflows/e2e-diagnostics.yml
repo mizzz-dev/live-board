@@ -1,0 +1,48 @@
+name: E2E Diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
+      - name: Capture E2E output
+        shell: bash
+        run: |
+          set +e
+          pnpm test:e2e > e2e.log 2>&1
+          status=$?
+          echo "$status" > e2e-status.txt
+          exit 0
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          path: |
+            e2e.log
+            e2e-status.txt
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 1
