@@ -2,26 +2,32 @@ import {
   DomainError,
   canRedoProject,
   canUndoProject,
+  cloneLayer,
   createAddPageCommand,
   createBroadcastSnapshot,
   createDeletePageCommand,
   createDuplicatePageCommand,
   createEmptyWorkspace,
+  createLayerWorkspaceCommandState,
   createMovePageCommand,
   createPage,
   createSelectBroadcastPageCommand,
   createSelectEditPageCommand,
-  createWorkspaceCommandState,
-  dispatchProjectCommand,
+  dispatchProjectCommandWithLayerHistory,
+  getLayerDocument,
   getProjectHistory,
-  redoProjectCommand,
-  undoProjectCommand,
+  redoProjectCommandWithLayerHistory,
+  undoProjectCommandWithLayerHistory,
+  type Layer,
+  type LayerDocument,
+  type Page,
   type ProjectCommand,
 } from '@live-board/domain';
 import { useEffect, useRef, useState } from 'react';
+import { LayerPanel } from './LayerPanel';
 import './page-controls.css';
 
-const initialCommandState = createWorkspaceCommandState(
+const initialCommandState = createLayerWorkspaceCommandState(
   createEmptyWorkspace('local-workspace'),
 );
 
@@ -31,9 +37,7 @@ export function App() {
   const runtime = window.liveBoard?.getRuntimeInfo();
   const [commandState, setCommandState] = useState(initialCommandState);
   const [domainError, setDomainError] = useState<string | null>(null);
-  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(
-    null,
-  );
+  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null);
   const [securityStatusError, setSecurityStatusError] = useState(false);
   const [broadcastRevision, setBroadcastRevision] = useState<number | null>(null);
   const [broadcastSyncError, setBroadcastSyncError] = useState(false);
@@ -54,17 +58,14 @@ export function App() {
     ) ?? project.pages[0]!;
   const editPageIndex = project.pages.findIndex((page) => page.id === editPage.id);
   const projectHistory = getProjectHistory(commandState, project.id);
+  const broadcastLayerSignature = JSON.stringify(getLayerDocument(broadcastPage));
 
   useEffect(() => {
     const liveBoardApi = window.liveBoard;
-
-    if (liveBoardApi === undefined) {
-      return;
-    }
+    if (liveBoardApi === undefined) return;
 
     let active = true;
     const requestId = globalThis.crypto.randomUUID();
-
     void liveBoardApi
       .getSecurityStatus(requestId)
       .then((status) => {
@@ -75,9 +76,7 @@ export function App() {
         }
       })
       .catch(() => {
-        if (active) {
-          setSecurityStatusError(true);
-        }
+        if (active) setSecurityStatusError(true);
       });
 
     return () => {
@@ -87,10 +86,7 @@ export function App() {
 
   useEffect(() => {
     const liveBoardApi = window.liveBoard;
-
-    if (liveBoardApi === undefined || securityStatus === null) {
-      return;
-    }
+    if (liveBoardApi === undefined || securityStatus === null) return;
 
     let active = true;
     const revision = nextBroadcastRevisionRef.current;
@@ -111,10 +107,7 @@ export function App() {
         }
       })
       .catch(() => {
-        if (!active) {
-          return;
-        }
-
+        if (!active) return;
         setBroadcastSyncError(true);
         const refreshRequestId = globalThis.crypto.randomUUID();
         void liveBoardApi
@@ -127,9 +120,7 @@ export function App() {
             }
           })
           .catch(() => {
-            if (active) {
-              setSecurityStatusError(true);
-            }
+            if (active) setSecurityStatusError(true);
           });
       });
 
@@ -145,6 +136,7 @@ export function App() {
     broadcastPage.height,
     broadcastPage.dpi,
     broadcastPage.transparent,
+    broadcastLayerSignature,
   ]);
 
   const obsBridgeLabel = securityStatusError
@@ -166,7 +158,7 @@ export function App() {
   function executeCommand(command: ProjectCommand): void {
     try {
       setCommandState((currentState) =>
-        dispatchProjectCommand(currentState, command),
+        dispatchProjectCommandWithLayerHistory(currentState, command),
       );
       setDomainError(null);
     } catch (error: unknown) {
@@ -183,7 +175,6 @@ export function App() {
       projectId: project.id,
       name: `ページ ${pageNumber}`,
     });
-
     executeCommand(
       createAddPageCommand(
         project.id,
@@ -195,13 +186,17 @@ export function App() {
 
   function duplicateEditPage(): void {
     const timestamp = new Date().toISOString();
-    const duplicatedPage = createPage({
-      ...editPage,
-      id: createEntityId('page'),
-      name: `${editPage.name} のコピー`,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+    const pageId = createEntityId('page');
+    const duplicatedPage: Page = {
+      ...createPage({
+        ...editPage,
+        id: pageId,
+        name: `${editPage.name} のコピー`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+      layerDocument: duplicateLayerDocument(editPage, pageId, timestamp),
+    };
 
     executeCommand(
       createDuplicatePageCommand(
@@ -215,14 +210,10 @@ export function App() {
 
   function copyObsSourceUrl(): void {
     const liveBoardApi = window.liveBoard;
-
-    if (liveBoardApi === undefined) {
-      return;
-    }
+    if (liveBoardApi === undefined) return;
 
     const requestId = globalThis.crypto.randomUUID();
     setCopyStatus('idle');
-
     void liveBoardApi
       .copyObsSourceUrl(requestId)
       .then((response) => {
@@ -316,7 +307,7 @@ export function App() {
           <span>編集: {editPage.name}</span>
           <span>配信: {broadcastPage.name}</span>
           <span>
-            履歴: {projectHistory.past.length} / Redo {projectHistory.future.length}
+            Page履歴: {projectHistory.past.length} / Redo {projectHistory.future.length}
           </span>
           <span>{broadcastSyncLabel}</span>
           <span>
@@ -347,24 +338,24 @@ export function App() {
               disabled={!canUndoProject(commandState, project.id)}
               onClick={() => {
                 setCommandState((currentState) =>
-                  undoProjectCommand(currentState, project.id),
+                  undoProjectCommandWithLayerHistory(currentState, project.id),
                 );
                 setDomainError(null);
               }}
             >
-              元に戻す
+              Pageを元に戻す
             </button>
             <button
               type="button"
               disabled={!canRedoProject(commandState, project.id)}
               onClick={() => {
                 setCommandState((currentState) =>
-                  redoProjectCommand(currentState, project.id),
+                  redoProjectCommandWithLayerHistory(currentState, project.id),
                 );
                 setDomainError(null);
               }}
             >
-              やり直す
+              Pageをやり直す
             </button>
           </div>
 
@@ -372,7 +363,6 @@ export function App() {
             {project.pages.map((page) => {
               const isEditPage = page.id === project.activeEditPageId;
               const isBroadcastPage = page.id === project.activeBroadcastPageId;
-
               return (
                 <button
                   key={page.id}
@@ -407,9 +397,7 @@ export function App() {
           </div>
 
           <div className="page-actions" aria-label="選択ページの操作">
-            <button type="button" onClick={duplicateEditPage}>
-              複製
-            </button>
+            <button type="button" onClick={duplicateEditPage}>複製</button>
             <button
               type="button"
               disabled={editPageIndex <= 0}
@@ -458,24 +446,53 @@ export function App() {
               削除
             </button>
           </div>
-
-          <p className="domain-message" role="status" aria-live="polite">
-            {domainError ?? 'ページ操作はCommand履歴へ記録されます'}
-          </p>
         </section>
 
-        <section>
-          <div className="panel-heading">
-            <h2>レイヤー</h2>
-            <button type="button" aria-label="レイヤーを追加">
-              ＋
-            </button>
-          </div>
-          <div className="empty-panel">レイヤー基盤はIVR-241で実装します</div>
-        </section>
+        <LayerPanel
+          state={commandState}
+          project={project}
+          page={editPage}
+          setState={setCommandState}
+          onError={setDomainError}
+        />
+
+        <p className="domain-message" role="status" aria-live="polite">
+          {domainError ?? 'Page操作とLayer操作は別々の履歴へ記録されます'}
+        </p>
       </aside>
     </div>
   );
+}
+
+function duplicateLayerDocument(
+  sourcePage: Page,
+  targetPageId: string,
+  timestamp: string,
+): LayerDocument {
+  const source = getLayerDocument(sourcePage);
+  const idMap = new Map(
+    source.layers.map((layer) => [layer.id, createEntityId('layer')]),
+  );
+  const layers = source.layers.map((layer) => {
+    const copy = cloneLayer({
+      ...layer,
+      id: idMap.get(layer.id)!,
+      pageId: targetPageId,
+      parentId: layer.parentId === null ? null : idMap.get(layer.parentId)!,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    } as Layer);
+    if (copy.type === 'folder') {
+      copy.childLayerIds = copy.childLayerIds.map((id) => idMap.get(id)!);
+    }
+    return copy;
+  });
+  return {
+    layers,
+    rootLayerIds: source.rootLayerIds.map((id) => idMap.get(id)!),
+    activeLayerId:
+      source.activeLayerId === null ? null : idMap.get(source.activeLayerId)!,
+  };
 }
 
 function createEntityId(prefix: string): string {

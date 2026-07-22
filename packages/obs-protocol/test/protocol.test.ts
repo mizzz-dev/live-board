@@ -20,21 +20,83 @@ const snapshot: BroadcastSnapshot = {
     dpi: 72,
     background: { type: 'transparent' },
   },
-  layers: [],
+  layers: [
+    {
+      id: 'folder-1',
+      parentId: null,
+      name: 'フォルダー',
+      type: 'folder',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      color: null,
+      childLayerIds: ['text-1'],
+    },
+    {
+      id: 'text-1',
+      parentId: 'folder-1',
+      name: 'テキスト',
+      type: 'text',
+      visible: true,
+      opacity: 0.8,
+      blendMode: 'overlay',
+      color: '#FF00FF',
+      content: {
+        text: 'Live Board',
+        fontFamily: 'sans-serif',
+        fontSize: 32,
+        color: '#FFFFFF',
+      },
+    },
+  ],
 };
 
 describe('OBS protocol', () => {
-  it('有効なBroadcastSnapshotを検証する', () => {
+  it('有効なLayer treeを含むBroadcastSnapshotを検証する', () => {
     expect(parseBroadcastSnapshot(snapshot)).toEqual(snapshot);
   });
 
-  it('不正revisionと未定義Layerを拒否する', () => {
+  it('不正revision・未知Layer・壊れた親子関係を拒否する', () => {
     expect(() =>
       parseBroadcastSnapshot({ ...snapshot, revision: -1 }),
     ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT');
     expect(() =>
       parseBroadcastSnapshot({ ...snapshot, layers: [{ type: 'unknown' }] }),
-    ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT');
+    ).toThrow(/OBS_PROTOCOL_INVALID_LAYER/);
+    expect(() =>
+      parseBroadcastSnapshot({
+        ...snapshot,
+        layers: [
+          snapshot.layers[0],
+          { ...snapshot.layers[1], parentId: null },
+        ],
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_LAYER_TREE');
+  });
+
+  it('opacity・blend mode・色の境界を拒否する', () => {
+    const textLayer = snapshot.layers[1]!;
+    expect(() =>
+      parseBroadcastSnapshot({
+        ...snapshot,
+        layers: [snapshot.layers[0], { ...textLayer, opacity: 1.1 }],
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
+    expect(() =>
+      parseBroadcastSnapshot({
+        ...snapshot,
+        layers: [
+          snapshot.layers[0],
+          { ...textLayer, blendMode: 'unsupported' },
+        ],
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
+    expect(() =>
+      parseBroadcastSnapshot({
+        ...snapshot,
+        layers: [snapshot.layers[0], { ...textLayer, color: 'red' }],
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_LAYER');
   });
 
   it('即時・フェード遷移を検証する', () => {
@@ -63,7 +125,7 @@ describe('OBS protocol', () => {
     ).toEqual({ type: 'snapshot.request', lastRevision: 3 });
   });
 
-  it('snapshotとpage.changedメッセージを検証する', () => {
+  it('snapshot・page.changed・layer.updatedを検証する', () => {
     expect(
       parseObsBridgeServerMessage({ type: 'snapshot', snapshot }),
     ).toEqual({ type: 'snapshot', snapshot });
@@ -78,5 +140,8 @@ describe('OBS protocol', () => {
       snapshot,
       transition: { type: 'fade', durationMs: 150 },
     });
+    expect(
+      parseObsBridgeServerMessage({ type: 'layer.updated', snapshot }),
+    ).toEqual({ type: 'layer.updated', snapshot });
   });
 });

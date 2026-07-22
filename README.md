@@ -15,7 +15,7 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M1「ワークスペース・ページ・OBS同期」の初期縦スライスです。
+M2「レイヤー・描画・画像編集」のLayer基盤を実装しています。
 
 実装済み:
 
@@ -25,16 +25,22 @@ M1「ワークスペース・ページ・OBS同期」の初期縦スライスで
 - Workspace / Project / Pageモデル
 - ページ追加・複製・削除・並び替えCommand
 - 編集ページと配信ページの独立切り替え
-- Project単位のUndo / Redo履歴
-- 表示専用`BroadcastSnapshot` DTO
-- revision付きsnapshotのWebSocket配信
+- Project単位のPage Undo / Redo履歴
+- Raster / Text / Image / Shape / Background / Folder Layer
+- Layer treeの親子関係・並び順・循環参照防止
+- 表示、編集ロック、移動ロック、透明ピクセルロック
+- opacity、レイヤーカラー、通常・乗算・スクリーン・加算・オーバーレイ
+- Layer追加・削除・複製・名前変更・移動・結合
+- Page単位のLayer Undo / Redo履歴
+- 表示専用`BroadcastSnapshot` / `BroadcastLayer` DTO
+- `snapshot`、`page.changed`、`layer.updated`のWebSocket配信
 - 接続直後の最新snapshot送信
 - Overlayの自動再接続と最後の正常フレーム保持
 - token付きOBS Browser Source URLの安全なコピー
 - ビルド済みOverlayのloopback静的配信
 - lint、型検査、Unit Test、production build、E2E
 
-描画、Layer差分イベント、テーマ、永続化、画像処理は後続Issueで実装します。
+Canvas描画、画像処理、テーマ、永続化は後続Issueで実装します。
 
 ## 必要環境
 
@@ -60,6 +66,14 @@ pnpm dev:desktop
 
 Editor、OBS Protocol、OBS Bridge、ビルド済みOverlay、Electron Main / Preloadを起動します。
 RendererからNode.js APIへ直接アクセスできない構成です。
+
+### Layer操作
+
+- Pageごとに独立したLayer treeを保持します。
+- Page操作とLayer操作は別々のUndo / Redo履歴へ記録します。
+- フォルダーを子孫へ移動する操作や、ロック済みLayerの破壊操作はDomain境界で拒否します。
+- 表示Layerの種類・順序・opacity・blend modeはOBS向けDTOへ投影します。
+- 選択状態、編集ロック、移動ロック、ローカルパスはOBSへ送信しません。
 
 ### OBSへの追加
 
@@ -91,8 +105,8 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、ページ操作とPreview状態を確認します。
-OBS Bridgeのtoken認証、snapshot push、再接続収束、静的ファイル配信はVitestで確認します。
+`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、Page操作、Layer操作、Preview状態を確認します。
+OBS Bridgeのtoken認証、snapshot push、`layer.updated`、再接続収束、静的ファイル配信はVitestで確認します。
 ElectronプロセスとOBS実機を組み合わせた自動試験は配布設定と合わせて後続で追加します。
 
 ## モノレポ構成
@@ -103,7 +117,7 @@ apps/
   overlay/          OBS Browser Source向けReactアプリ
 packages/
   config/           共有TypeScript設定
-  domain/           Workspace / Project / Page / Command履歴・snapshot投影
+  domain/           Workspace / Project / Page / Layer / Command履歴・snapshot投影
   obs-protocol/     Editor・Bridge・Overlay間のDTOとメッセージ検証
   obs-bridge/       loopback限定HTTP / WebSocket・Overlay静的配信
 ```
