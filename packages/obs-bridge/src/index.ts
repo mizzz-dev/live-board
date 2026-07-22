@@ -74,13 +74,11 @@ export function parseClientMessage(
   maxPayloadBytes = DEFAULT_MAX_PAYLOAD_BYTES,
 ): ObsBridgeClientMessage {
   const text = rawDataToText(rawData);
-
   if (Buffer.byteLength(text, 'utf8') > maxPayloadBytes) {
     throw new Error('OBS_BRIDGE_MESSAGE_TOO_LARGE');
   }
 
   let parsed: unknown;
-
   try {
     parsed = JSON.parse(text);
   } catch {
@@ -96,9 +94,34 @@ export function parseClientMessage(
     ) {
       throw new Error('OBS_BRIDGE_UNKNOWN_MESSAGE');
     }
-
     throw new Error('OBS_BRIDGE_INVALID_MESSAGE');
   }
+}
+
+export function createSnapshotMessage(
+  previousSnapshot: BroadcastSnapshot | undefined,
+  snapshot: BroadcastSnapshot,
+  pageTransition: PageTransition,
+): ObsBridgeServerMessage {
+  if (
+    previousSnapshot !== undefined &&
+    previousSnapshot.pageId !== snapshot.pageId
+  ) {
+    return {
+      type: 'page.changed',
+      snapshot,
+      transition: pageTransition,
+    };
+  }
+
+  if (
+    previousSnapshot !== undefined &&
+    JSON.stringify(previousSnapshot.layers) !== JSON.stringify(snapshot.layers)
+  ) {
+    return { type: 'layer.updated', snapshot };
+  }
+
+  return { type: 'snapshot', snapshot };
 }
 
 export async function startObsBridge(
@@ -112,7 +135,6 @@ export async function startObsBridge(
   const pageTransition = parsePageTransition(
     options.pageTransition ?? DEFAULT_PAGE_TRANSITION,
   );
-
   validateOptions({ host, port, maxConnections, maxPayloadBytes });
 
   const token = randomBytes(TOKEN_BYTES).toString('hex');
@@ -159,12 +181,10 @@ export async function startObsBridge(
     }
 
     const requestUrl = new URL(request.url ?? '/', ownOrigin);
-
     if (requestUrl.pathname !== '/ws') {
       rejectUpgrade(socket, 404, 'Not Found');
       return;
     }
-
     if (!isValidToken(token, requestUrl.searchParams.get('token'))) {
       rejectUpgrade(socket, 401, 'Unauthorized');
       return;
@@ -173,12 +193,10 @@ export async function startObsBridge(
     const origin = request.headers.origin;
     const allowedOrigins = new Set(configuredOrigins);
     allowedOrigins.add(ownOrigin);
-
     if (origin === undefined || !isAllowedOrigin(origin, allowedOrigins)) {
       rejectUpgrade(socket, 403, 'Forbidden');
       return;
     }
-
     if (webSocketServer.clients.size >= maxConnections) {
       rejectUpgrade(socket, 503, 'Service Unavailable');
       return;
@@ -195,7 +213,6 @@ export async function startObsBridge(
       maxPayloadBytes,
       () => latestSnapshot,
     );
-
     if (latestSnapshot !== undefined) {
       sendServerMessage(webSocket, {
         type: 'snapshot',
@@ -205,9 +222,7 @@ export async function startObsBridge(
   });
 
   await listen(server, host, port);
-
   const address = server.address();
-
   if (address === null || typeof address === 'string') {
     server.close();
     throw new Error('OBS_BRIDGE_ADDRESS_UNAVAILABLE');
@@ -216,7 +231,6 @@ export async function startObsBridge(
   const resolvedPort = (address as AddressInfo).port;
   const formattedHost = formatHostForUrl(host);
   ownOrigin = `http://${formattedHost}:${resolvedPort}`;
-
   const info: ObsBridgeInfo = Object.freeze({
     host,
     port: resolvedPort,
@@ -230,7 +244,6 @@ export async function startObsBridge(
     getLatestRevision: () => latestSnapshot?.revision ?? null,
     publishSnapshot: (input) => {
       const snapshot = parseBroadcastSnapshot(input);
-
       if (
         latestSnapshot !== undefined &&
         snapshot.revision <= latestSnapshot.revision
@@ -238,46 +251,27 @@ export async function startObsBridge(
         throw new Error('OBS_BRIDGE_STALE_REVISION');
       }
 
-      const previousSnapshot = latestSnapshot;
+      const message = createSnapshotMessage(
+        latestSnapshot,
+        snapshot,
+        pageTransition,
+      );
       latestSnapshot = snapshot;
-      const message: ObsBridgeServerMessage =
-        previousSnapshot !== undefined &&
-        previousSnapshot.pageId !== snapshot.pageId
-          ? {
-              type: 'page.changed',
-              snapshot,
-              transition: pageTransition,
-            }
-          : {
-              type: 'snapshot',
-              snapshot,
-            };
-
       for (const client of webSocketServer.clients) {
-        if (client.readyState === 1) {
-          sendServerMessage(client, message);
-        }
+        if (client.readyState === 1) sendServerMessage(client, message);
       }
-
       return snapshot.revision;
     },
     close: async () => {
-      for (const client of webSocketServer.clients) {
-        client.terminate();
-      }
-
+      for (const client of webSocketServer.clients) client.terminate();
       await Promise.all([
         new Promise<void>((resolvePromise) => {
           webSocketServer.close(() => resolvePromise());
         }),
         new Promise<void>((resolvePromise, reject) => {
           server.close((error) => {
-            if (error !== undefined) {
-              reject(error);
-              return;
-            }
-
-            resolvePromise();
+            if (error !== undefined) reject(error);
+            else resolvePromise();
           });
         }),
       ]);
@@ -299,7 +293,6 @@ async function listen(
       server.off('error', onError);
       resolvePromise();
     };
-
     server.once('error', onError);
     server.once('listening', onListening);
     server.listen({ host, port, exclusive: true });
@@ -314,15 +307,12 @@ async function handleHttpRequest(
   overlayRoot: string | undefined,
 ): Promise<void> {
   if (!isLoopbackAddress(request.socket.remoteAddress)) {
-    response.writeHead(403, {
-      'Content-Type': 'text/plain; charset=utf-8',
-    });
+    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('Forbidden');
     return;
   }
 
   const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'no-referrer');
@@ -338,11 +328,8 @@ async function handleHttpRequest(
     requestUrl.pathname.startsWith('/overlay/')
   ) {
     const candidateToken = requestUrl.pathname.slice('/overlay/'.length);
-
     if (!isValidToken(token, candidateToken)) {
-      response.writeHead(401, {
-        'Content-Type': 'text/plain; charset=utf-8',
-      });
+      response.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Unauthorized');
       return;
     }
@@ -352,7 +339,6 @@ async function handleHttpRequest(
         ? createFallbackOverlayDocument()
         : await readFile(resolve(overlayRoot, 'index.html'), 'utf8');
     const webSocketOrigin = ownOrigin.replace(/^http:/, 'ws:');
-
     response.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': [
@@ -379,33 +365,24 @@ async function handleHttpRequest(
       overlayRoot,
       requestUrl.pathname,
     );
-
     if (assetPath === null) {
-      response.writeHead(400, {
-        'Content-Type': 'text/plain; charset=utf-8',
-      });
+      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Bad Request');
       return;
     }
 
     try {
       const content = await readFile(assetPath);
-      response.writeHead(200, {
-        'Content-Type': contentTypeForPath(assetPath),
-      });
+      response.writeHead(200, { 'Content-Type': contentTypeForPath(assetPath) });
       response.end(content);
     } catch {
-      response.writeHead(404, {
-        'Content-Type': 'text/plain; charset=utf-8',
-      });
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Not Found');
     }
     return;
   }
 
-  response.writeHead(404, {
-    'Content-Type': 'text/plain; charset=utf-8',
-  });
+  response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   response.end('Not Found');
 }
 
@@ -422,7 +399,6 @@ function registerClientMessageHandler(
 
     try {
       const message = parseClientMessage(rawData, maxPayloadBytes);
-
       if (message.type === 'ping') {
         sendServerMessage(webSocket, {
           type: 'pong',
@@ -432,15 +408,11 @@ function registerClientMessageHandler(
       }
 
       const snapshot = getLatestSnapshot();
-
       if (
         snapshot !== undefined &&
         message.lastRevision !== snapshot.revision
       ) {
-        sendServerMessage(webSocket, {
-          type: 'snapshot',
-          snapshot,
-        });
+        sendServerMessage(webSocket, { type: 'snapshot', snapshot });
       }
     } catch {
       webSocket.close(1008, 'Invalid message');
@@ -464,15 +436,9 @@ function validateOptions(options: {
   if (options.host !== '127.0.0.1' && options.host !== '::1') {
     throw new Error('OBS_BRIDGE_HOST_MUST_BE_LOOPBACK');
   }
-
-  if (
-    !Number.isInteger(options.port) ||
-    options.port < 0 ||
-    options.port > 65535
-  ) {
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
     throw new Error('OBS_BRIDGE_INVALID_PORT');
   }
-
   if (
     !Number.isInteger(options.maxConnections) ||
     options.maxConnections < 1 ||
@@ -480,7 +446,6 @@ function validateOptions(options: {
   ) {
     throw new Error('OBS_BRIDGE_INVALID_CONNECTION_LIMIT');
   }
-
   if (
     !Number.isInteger(options.maxPayloadBytes) ||
     options.maxPayloadBytes < 1024 ||
@@ -494,13 +459,9 @@ function isValidToken(
   expectedToken: string,
   candidateToken: string | null,
 ): boolean {
-  if (candidateToken === null) {
-    return false;
-  }
-
+  if (candidateToken === null) return false;
   const expected = Buffer.from(expectedToken, 'utf8');
   const candidate = Buffer.from(candidateToken, 'utf8');
-
   return (
     expected.length === candidate.length &&
     timingSafeEqual(expected, candidate)
@@ -520,11 +481,9 @@ function rejectUpgrade(
 
 function normalizeOrigin(origin: string): string {
   const url = new URL(origin);
-
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('OBS_BRIDGE_INVALID_ORIGIN');
   }
-
   return url.origin;
 }
 
@@ -544,14 +503,8 @@ function formatHostForUrl(host: LoopbackHost): string {
 }
 
 function rawDataToText(rawData: RawData): string {
-  if (Array.isArray(rawData)) {
-    return Buffer.concat(rawData).toString('utf8');
-  }
-
-  if (rawData instanceof ArrayBuffer) {
-    return Buffer.from(rawData).toString('utf8');
-  }
-
+  if (Array.isArray(rawData)) return Buffer.concat(rawData).toString('utf8');
+  if (rawData instanceof ArrayBuffer) return Buffer.from(rawData).toString('utf8');
   return rawData.toString('utf8');
 }
 
@@ -560,25 +513,16 @@ function resolveStaticAssetPath(
   requestPath: string,
 ): string | null {
   let decodedPath: string;
-
   try {
     decodedPath = decodeURIComponent(requestPath.slice(1));
   } catch {
     return null;
   }
-
-  if (decodedPath.includes('\\') || decodedPath.includes('\0')) {
-    return null;
-  }
+  if (decodedPath.includes('\\') || decodedPath.includes('\0')) return null;
 
   const root = resolve(overlayRoot);
   const candidate = resolve(root, decodedPath);
-
-  if (!candidate.startsWith(`${root}${sep}`)) {
-    return null;
-  }
-
-  return candidate;
+  return candidate.startsWith(`${root}${sep}`) ? candidate : null;
 }
 
 function contentTypeForPath(path: string): string {
