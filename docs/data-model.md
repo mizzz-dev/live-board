@@ -222,6 +222,22 @@ interface HistoryEntry {
 
 破壊的操作は原則として`inverseCommand`または復元用snapshotを持つ。画像結合や大量ラスターデータ操作では、履歴メモリ上限を超える前にユーザーへ警告する。
 
+### M1実装時点の境界
+
+`IVR-239`では、Workspace／Project／Pageの操作を判別可能な`WorkspaceCommand`へ集約し、実行前Workspaceのスナップショットを最大100件保持する。Undo後に新しいCommandを実行した場合はRedo履歴を破棄する。
+
+この段階では小さいメタデータのみが対象であるため全体スナップショットを採用する。ラスターレイヤー導入後は履歴容量の肥大化を避けるため、Command単位の逆操作または差分アセット方式へ置き換える。UI store、永続化データ、OBS DTOから直接Domainを書き換えてはならない。
+
+実装済みの主な不変条件:
+
+- Workspaceは1件以上のProjectを持つ
+- Projectは1件以上のPageを持つ
+- Project／Page IDは同一スコープ内で重複しない
+- Pageの幅・高さは正の整数
+- 編集ページと配信ページは独立して選択する
+- 選択中のPage削除時は残存Pageへ安全にフォールバックする
+- 実質的な変更がないCommandではrevisionと履歴を増やさない
+
 ## 8. BroadcastSnapshot
 
 OBSへは永続化モデルを直接送信しない。表示に必要なデータだけを投影したDTOを使用する。
