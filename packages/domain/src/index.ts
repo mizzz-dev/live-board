@@ -5,4 +5,5 @@ export * from './layers.js';
 export * from './layer-merge.js';
 export * from './layer-commands.js';
 export * from './layer-history.js';
+export * from './canvas-state.js';
 export * from './broadcast.js';
