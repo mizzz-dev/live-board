@@ -2,6 +2,29 @@ export * from './model.js';
 export * from './commands.js';
 export * from './history.js';
 export * from './layers.js';
+export {
+  AssetValidationError,
+  MAX_ASSET_BYTES,
+  MAX_ASSET_DIMENSION,
+  MAX_ASSET_LIBRARY_BYTES,
+  MAX_ASSET_PIXELS,
+  MAX_SVG_BYTES,
+  cloneProjectAssetLibrary,
+  createProjectAssetLibrary,
+  findProjectAsset,
+  listReferencedProjectAssets,
+  sanitizeSvg,
+} from './assets.js';
+export type {
+  AssetErrorCode,
+  AssetImportInput,
+  AssetImportResult,
+  ProjectAsset,
+  ProjectAssetLibrary,
+  ProjectAssetMime,
+} from './assets.js';
+export { importProjectAsset } from './secure-asset-import.js';
+export * from './rich-layers.js';
 export * from './layer-merge.js';
 export * from './layer-commands.js';
 export {

@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/protocol-v3.js",
-  "types": "./dist/protocol-v3.d.ts",
+  "main": "./dist/index-v4.js",
+  "types": "./dist/index-v4.d.ts",
   "exports": {
     ".": {
-      "types": "./src/protocol-v3.ts",
-      "import": "./dist/protocol-v3.js"
+      "types": "./src/index-v4.ts",
+      "import": "./dist/index-v4.js"
     }
   },
   "scripts": {

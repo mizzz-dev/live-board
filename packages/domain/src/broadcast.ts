@@ -1,5 +1,6 @@
 import {
   BROADCAST_SNAPSHOT_SCHEMA_VERSION,
+  type BroadcastAsset,
   type BroadcastLayer,
   type BroadcastSnapshot,
 } from '@live-board/obs-protocol';
@@ -20,19 +21,29 @@ import {
   getLayerTransform,
   getRasterDrawing,
 } from './canvas-state.js';
+import {
+  getRichImageContent,
+  getRichShapeContent,
+  getRichTextContent,
+} from './rich-layers.js';
+import {
+  listReferencedProjectAssets,
+  type ProjectAssetLibrary,
+} from './assets.js';
 
 export function createBroadcastSnapshot(
   workspace: Workspace,
   projectId: ProjectId,
   revision: number,
   generatedAt = new Date().toISOString(),
+  assetLibrary?: ProjectAssetLibrary,
 ): BroadcastSnapshot {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     throw new Error(`Invalid broadcast revision: ${revision}`);
   }
   const project = findProject(workspace, projectId);
   const page = findPage(project, project.activeBroadcastPageId);
-  return createPageRenderSnapshot(page, project.id, revision, generatedAt);
+  return createPageRenderSnapshot(page, project.id, revision, generatedAt, assetLibrary);
 }
 
 export function createPageRenderSnapshot(
@@ -40,10 +51,16 @@ export function createPageRenderSnapshot(
   projectId: ProjectId,
   revision = 0,
   generatedAt = new Date().toISOString(),
+  assetLibrary?: ProjectAssetLibrary,
 ): BroadcastSnapshot {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     throw new Error(`Invalid render revision: ${revision}`);
   }
+  const document = getLayerDocument(page);
+  const layers = createBroadcastLayers(document);
+  const assets = assetLibrary === undefined
+    ? undefined
+    : createBroadcastAssets(layers, assetLibrary);
   return {
     schemaVersion: BROADCAST_SNAPSHOT_SCHEMA_VERSION,
     projectId,
@@ -59,7 +76,8 @@ export function createPageRenderSnapshot(
         ? { type: 'transparent' }
         : { type: 'color', value: '#FFFFFF' },
     },
-    layers: createBroadcastLayers(getLayerDocument(page)),
+    layers,
+    ...(assets === undefined ? {} : { assets }),
   };
 }
 
@@ -75,6 +93,29 @@ export function createBroadcastLayers(
   return listLayersInPaintOrder(document)
     .filter((layer) => visibleIds.has(layer.id))
     .map((layer) => toBroadcastLayer(layer, visibleIds));
+}
+
+export function createBroadcastAssets(
+  layers: readonly BroadcastLayer[],
+  library: ProjectAssetLibrary,
+): BroadcastAsset[] {
+  const assetIds = new Set<string>();
+  for (const layer of layers) {
+    if ((layer.type === 'image' || layer.type === 'raster') && layer.content.assetId !== null) {
+      assetIds.add(layer.content.assetId);
+    }
+  }
+  return listReferencedProjectAssets(library, assetIds).map((asset) => ({
+    id: asset.id,
+    sha256: asset.sha256,
+    mime: asset.mime,
+    width: asset.width,
+    height: asset.height,
+    byteLength: asset.byteLength,
+    dataUrl: asset.dataUrl,
+    animated: false,
+    sanitized: asset.sanitized,
+  }));
 }
 
 function isEffectivelyVisible(
@@ -128,9 +169,18 @@ function toBroadcastLayer(
       },
     };
   }
+  if (layer.type === 'text') {
+    return { ...base, type: 'text', content: getRichTextContent(layer) };
+  }
+  if (layer.type === 'image') {
+    return { ...base, type: 'image', content: getRichImageContent(layer) };
+  }
+  if (layer.type === 'shape') {
+    return { ...base, type: 'shape', content: getRichShapeContent(layer) };
+  }
   return {
     ...base,
-    type: layer.type,
+    type: 'background',
     content: { ...layer.content },
-  } as BroadcastLayer;
+  };
 }

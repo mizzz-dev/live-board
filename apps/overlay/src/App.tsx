@@ -1,4 +1,4 @@
-import { CanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
+import { RichCanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
 import {
   parseObsBridgeServerMessage,
   type BroadcastSnapshot,
@@ -26,15 +26,21 @@ export function App() {
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [revisionGapCount, setRevisionGapCount] = useState(0);
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
+  const [assetRevision, setAssetRevision] = useState(0);
   const latestRevisionRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef(new CanvasRenderer());
+  const rendererRef = useRef<RichCanvasRenderer | null>(null);
+  if (rendererRef.current === null) {
+    rendererRef.current = new RichCanvasRenderer(() => {
+      setAssetRevision((revision) => revision + 1);
+    });
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null || snapshot === null) return;
-    setRenderMetrics(rendererRef.current.render(canvas, snapshot));
-  }, [snapshot]);
+    setRenderMetrics(rendererRef.current!.render(canvas, snapshot));
+  }, [snapshot, assetRevision]);
 
   useEffect(() => {
     const webSocketUrl = createWebSocketUrl(window.location);
