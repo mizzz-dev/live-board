@@ -1,4 +1,9 @@
-import { DomainError, type Page, type PageId } from './model.js';
+import {
+  DomainError,
+  type DomainErrorCode,
+  type Page,
+  type PageId,
+} from './model.js';
 
 export type LayerId = string;
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'add' | 'overlay';
@@ -9,6 +14,28 @@ export type LayerType =
   | 'shape'
   | 'background'
   | 'folder';
+
+export type LayerErrorCode =
+  | 'LAYER_PAGE_MISMATCH'
+  | 'DUPLICATE_LAYER_ID'
+  | 'LAYER_NOT_FOUND'
+  | 'LAYER_PARENT_INVALID'
+  | 'LAYER_CYCLE'
+  | 'LAYER_LOCKED'
+  | 'LAYER_MERGE_INVALID'
+  | 'INVALID_LAYER_OPACITY'
+  | 'INVALID_BLEND_MODE'
+  | 'INVALID_LAYER_COLOR';
+
+export class LayerDomainError extends DomainError {
+  readonly layerCode: LayerErrorCode;
+
+  constructor(code: LayerErrorCode, message: string) {
+    super(code as DomainErrorCode, message);
+    this.name = 'LayerDomainError';
+    this.layerCode = code;
+  }
+}
 
 export interface LayerBase {
   id: LayerId;
@@ -29,10 +56,7 @@ export interface LayerBase {
 
 export interface RasterLayer extends LayerBase {
   type: 'raster';
-  content: {
-    assetId: string | null;
-    sourceLayerIds: LayerId[];
-  };
+  content: { assetId: string | null; sourceLayerIds: LayerId[] };
 }
 
 export interface TextLayer extends LayerBase {
@@ -47,11 +71,7 @@ export interface TextLayer extends LayerBase {
 
 export interface ImageLayer extends LayerBase {
   type: 'image';
-  content: {
-    assetId: string | null;
-    width: number;
-    height: number;
-  };
+  content: { assetId: string | null; width: number; height: number };
 }
 
 export interface ShapeLayer extends LayerBase {
@@ -66,9 +86,7 @@ export interface ShapeLayer extends LayerBase {
 
 export interface BackgroundLayer extends LayerBase {
   type: 'background';
-  content: {
-    color: string;
-  };
+  content: { color: string };
 }
 
 export interface FolderLayer extends LayerBase {
@@ -129,11 +147,7 @@ declare module './model.js' {
 }
 
 export function createEmptyLayerDocument(): LayerDocument {
-  return {
-    layers: [],
-    rootLayerIds: [],
-    activeLayerId: null,
-  };
+  return { layers: [], rootLayerIds: [], activeLayerId: null };
 }
 
 export function getLayerDocument(page: Page): LayerDocument {
@@ -141,9 +155,9 @@ export function getLayerDocument(page: Page): LayerDocument {
 }
 
 export function createLayer(input: CreateLayerInput): Layer {
-  assertLayerId(input.id);
-  assertLayerName(input.name);
-  const timestamp = input.createdAt ?? new Date().toISOString();
+  assertId(input.id);
+  assertName(input.name);
+  const createdAt = input.createdAt ?? new Date().toISOString();
   const base: LayerBase = {
     id: input.id,
     pageId: input.pageId,
@@ -157,10 +171,10 @@ export function createLayer(input: CreateLayerInput): Layer {
     opacity: input.opacity ?? 1,
     blendMode: input.blendMode ?? 'normal',
     color: input.color ?? null,
-    createdAt: timestamp,
-    updatedAt: input.updatedAt ?? timestamp,
+    createdAt,
+    updatedAt: input.updatedAt ?? createdAt,
   };
-  assertLayerProperties(base);
+  assertProperties(base);
 
   switch (input.type) {
     case 'raster':
@@ -168,8 +182,8 @@ export function createLayer(input: CreateLayerInput): Layer {
         ...base,
         type: 'raster',
         content: {
-          assetId: readNullableString(input.content?.assetId),
-          sourceLayerIds: readStringArray(input.content?.sourceLayerIds),
+          assetId: nullableString(input.content?.assetId),
+          sourceLayerIds: stringArray(input.content?.sourceLayerIds),
         },
       };
     case 'text':
@@ -177,10 +191,10 @@ export function createLayer(input: CreateLayerInput): Layer {
         ...base,
         type: 'text',
         content: {
-          text: readString(input.content?.text, ''),
-          fontFamily: readString(input.content?.fontFamily, 'sans-serif'),
-          fontSize: readPositiveNumber(input.content?.fontSize, 32),
-          color: readColor(input.content?.color, '#FFFFFF'),
+          text: stringValue(input.content?.text, ''),
+          fontFamily: stringValue(input.content?.fontFamily, 'sans-serif'),
+          fontSize: positiveNumber(input.content?.fontSize, 32),
+          color: colorValue(input.content?.color, '#FFFFFF'),
         },
       };
     case 'image':
@@ -188,9 +202,9 @@ export function createLayer(input: CreateLayerInput): Layer {
         ...base,
         type: 'image',
         content: {
-          assetId: readNullableString(input.content?.assetId),
-          width: readPositiveNumber(input.content?.width, 1),
-          height: readPositiveNumber(input.content?.height, 1),
+          assetId: nullableString(input.content?.assetId),
+          width: positiveNumber(input.content?.width, 1),
+          height: positiveNumber(input.content?.height, 1),
         },
       };
     case 'shape': {
@@ -203,9 +217,9 @@ export function createLayer(input: CreateLayerInput): Layer {
             shape === 'ellipse' || shape === 'line' || shape === 'rectangle'
               ? shape
               : 'rectangle',
-          fill: readNullableColor(input.content?.fill),
-          stroke: readColor(input.content?.stroke, '#FFFFFF'),
-          strokeWidth: readPositiveNumber(input.content?.strokeWidth, 2),
+          fill: nullableColor(input.content?.fill),
+          stroke: colorValue(input.content?.stroke, '#FFFFFF'),
+          strokeWidth: positiveNumber(input.content?.strokeWidth, 2),
         },
       };
     }
@@ -213,16 +227,10 @@ export function createLayer(input: CreateLayerInput): Layer {
       return {
         ...base,
         type: 'background',
-        content: {
-          color: readColor(input.content?.color, '#00000000'),
-        },
+        content: { color: colorValue(input.content?.color, '#00000000') },
       };
     case 'folder':
-      return {
-        ...base,
-        type: 'folder',
-        childLayerIds: [],
-      };
+      return { ...base, type: 'folder', childLayerIds: [] };
   }
 }
 
@@ -230,7 +238,6 @@ export function cloneLayer(layer: Layer): Layer {
   if (layer.type === 'folder') {
     return { ...layer, childLayerIds: [...layer.childLayerIds] };
   }
-
   if (layer.type === 'raster') {
     return {
       ...layer,
@@ -240,7 +247,6 @@ export function cloneLayer(layer: Layer): Layer {
       },
     };
   }
-
   return { ...layer, content: { ...layer.content } } as Layer;
 }
 
@@ -256,72 +262,62 @@ export function assertLayerDocumentIntegrity(
   pageId: PageId,
   document: LayerDocument,
 ): void {
-  const layerMap = new Map<LayerId, Layer>();
-
+  const map = new Map<LayerId, Layer>();
   for (const layer of document.layers) {
-    assertLayerId(layer.id);
-    assertLayerName(layer.name);
-    assertLayerProperties(layer);
-
+    assertId(layer.id);
+    assertName(layer.name);
+    assertProperties(layer);
     if (layer.pageId !== pageId) {
-      throw new DomainError(
+      throw layerError(
         'LAYER_PAGE_MISMATCH',
         `Layer ${layer.id} does not belong to page ${pageId}`,
       );
     }
-    if (layerMap.has(layer.id)) {
-      throw new DomainError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${layer.id}`);
+    if (map.has(layer.id)) {
+      throw layerError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${layer.id}`);
     }
-    layerMap.set(layer.id, layer);
+    map.set(layer.id, layer);
   }
 
-  if (
-    document.activeLayerId !== null &&
-    !layerMap.has(document.activeLayerId)
-  ) {
-    throw new DomainError(
+  if (document.activeLayerId !== null && !map.has(document.activeLayerId)) {
+    throw layerError(
       'LAYER_NOT_FOUND',
       `Active layer not found: ${document.activeLayerId}`,
     );
   }
 
-  const referencedIds = new Set<LayerId>();
-  assertSiblingList(document.rootLayerIds, null, layerMap, referencedIds);
-
+  const referenced = new Set<LayerId>();
+  assertSiblings(document.rootLayerIds, null, map, referenced);
   for (const layer of document.layers) {
     if (layer.type === 'folder') {
-      assertSiblingList(layer.childLayerIds, layer.id, layerMap, referencedIds);
+      assertSiblings(layer.childLayerIds, layer.id, map, referenced);
     }
   }
 
-  if (referencedIds.size !== document.layers.length) {
-    const orphan = document.layers.find((layer) => !referencedIds.has(layer.id));
-    throw new DomainError(
+  if (referenced.size !== document.layers.length) {
+    const orphan = document.layers.find((layer) => !referenced.has(layer.id));
+    throw layerError(
       'LAYER_PARENT_INVALID',
       `Layer is not referenced by its parent: ${orphan?.id ?? 'unknown'}`,
     );
   }
 
   for (const rootId of document.rootLayerIds) {
-    assertNoCycle(rootId, layerMap, new Set(), 0);
+    assertNoCycle(rootId, map, new Set(), 0);
   }
 }
 
 export function listLayersInPaintOrder(document: LayerDocument): Layer[] {
-  assertDocumentWithoutPageConstraint(document);
-  const layerMap = toLayerMap(document);
+  assertWithoutPage(document);
+  const map = layerMap(document);
   const result: Layer[] = [];
-
   const visit = (ids: readonly LayerId[]): void => {
     for (const id of ids) {
-      const layer = layerMap.get(id)!;
+      const layer = map.get(id)!;
       result.push(cloneLayer(layer));
-      if (layer.type === 'folder') {
-        visit(layer.childLayerIds);
-      }
+      if (layer.type === 'folder') visit(layer.childLayerIds);
     }
   };
-
   visit(document.rootLayerIds);
   return result;
 }
@@ -334,11 +330,10 @@ export function addLayer(
 ): LayerDocument {
   const next = cloneLayerDocument(document);
   if (next.layers.some((candidate) => candidate.id === layer.id)) {
-    throw new DomainError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${layer.id}`);
+    throw layerError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${layer.id}`);
   }
-
-  const siblings = getMutableSiblingIds(next, parentId);
-  assertInsertIndex(index, siblings.length);
+  const siblings = mutableSiblings(next, parentId);
+  assertIndex(index, siblings.length);
   const inserted = cloneLayer({ ...layer, parentId } as Layer);
   next.layers.push(inserted);
   siblings.splice(index, 0, inserted.id);
@@ -355,18 +350,15 @@ export function deleteLayer(
   const next = cloneLayerDocument(document);
   const layer = findLayer(next, layerId);
   if (layer.editLocked) {
-    throw new DomainError('LAYER_LOCKED', `Layer is locked: ${layerId}`);
+    throw layerError('LAYER_LOCKED', `Layer is locked: ${layerId}`);
   }
-
-  const deletedIds = collectSubtreeIds(next, layerId);
-  const siblings = getMutableSiblingIds(next, layer.parentId);
+  const deleted = subtreeIds(next, layerId);
+  const siblings = mutableSiblings(next, layer.parentId);
   siblings.splice(siblings.indexOf(layerId), 1);
-  next.layers = next.layers.filter((candidate) => !deletedIds.has(candidate.id));
-
-  if (next.activeLayerId !== null && deletedIds.has(next.activeLayerId)) {
+  next.layers = next.layers.filter((candidate) => !deleted.has(candidate.id));
+  if (next.activeLayerId !== null && deleted.has(next.activeLayerId)) {
     next.activeLayerId = siblings.at(-1) ?? next.rootLayerIds.at(-1) ?? null;
   }
-
   assertLayerDocumentIntegrity(pageId, next);
   return next;
 }
@@ -378,8 +370,8 @@ export function renameLayer(
   name: string,
   updatedAt: string,
 ): LayerDocument {
-  assertLayerName(name);
-  return updateLayerById(document, pageId, layerId, (layer) => {
+  assertName(name);
+  return updateById(document, pageId, layerId, (layer) => {
     assertEditable(layer);
     return { ...layer, name: name.trim(), updatedAt } as Layer;
   });
@@ -392,17 +384,15 @@ export function updateLayerProperties(
   properties: UpdateLayerProperties,
   updatedAt: string,
 ): LayerDocument {
-  return updateLayerById(document, pageId, layerId, (layer) => {
-    if (layer.editLocked && properties.editLocked !== false) {
-      throw new DomainError('LAYER_LOCKED', `Layer is locked: ${layerId}`);
+  return updateById(document, pageId, layerId, (layer) => {
+    const onlyControlProperties = Object.keys(properties).every((key) =>
+      ['visible', 'editLocked', 'movementLocked', 'alphaLocked'].includes(key),
+    );
+    if (layer.editLocked && properties.editLocked !== false && !onlyControlProperties) {
+      throw layerError('LAYER_LOCKED', `Layer is locked: ${layerId}`);
     }
-
-    const updated = {
-      ...layer,
-      ...properties,
-      updatedAt,
-    } as Layer;
-    assertLayerProperties(updated);
+    const updated = { ...layer, ...properties, updatedAt } as Layer;
+    assertProperties(updated);
     return updated;
   });
 }
@@ -418,32 +408,31 @@ export function moveLayer(
   const next = cloneLayerDocument(document);
   const layer = findLayer(next, layerId);
   if (layer.movementLocked || layer.editLocked) {
-    throw new DomainError('LAYER_LOCKED', `Layer cannot be moved: ${layerId}`);
+    throw layerError('LAYER_LOCKED', `Layer cannot be moved: ${layerId}`);
   }
   if (parentId === layerId) {
-    throw new DomainError('LAYER_CYCLE', 'A layer cannot contain itself');
+    throw layerError('LAYER_CYCLE', 'A layer cannot contain itself');
   }
   if (parentId !== null) {
     const parent = findLayer(next, parentId);
     if (parent.type !== 'folder') {
-      throw new DomainError('LAYER_PARENT_INVALID', `Parent is not a folder: ${parentId}`);
+      throw layerError('LAYER_PARENT_INVALID', `Parent is not a folder: ${parentId}`);
     }
-    if (collectSubtreeIds(next, layerId).has(parentId)) {
-      throw new DomainError(
+    if (subtreeIds(next, layerId).has(parentId)) {
+      throw layerError(
         'LAYER_CYCLE',
         `Layer ${layerId} cannot be moved into its descendant ${parentId}`,
       );
     }
   }
 
-  const sourceSiblings = getMutableSiblingIds(next, layer.parentId);
-  const sourceIndex = sourceSiblings.indexOf(layerId);
-  sourceSiblings.splice(sourceIndex, 1);
-  const targetSiblings = getMutableSiblingIds(next, parentId);
-  const adjustedIndex =
-    sourceSiblings === targetSiblings && sourceIndex < index ? index - 1 : index;
-  assertInsertIndex(adjustedIndex, targetSiblings.length);
-  targetSiblings.splice(adjustedIndex, 0, layerId);
+  const source = mutableSiblings(next, layer.parentId);
+  const sourceIndex = source.indexOf(layerId);
+  source.splice(sourceIndex, 1);
+  const target = mutableSiblings(next, parentId);
+  const adjusted = source === target && sourceIndex < index ? index - 1 : index;
+  assertIndex(adjusted, target.length);
+  target.splice(adjusted, 0, layerId);
   next.layers = next.layers.map((candidate) =>
     candidate.id === layerId
       ? ({ ...candidate, parentId, updatedAt } as Layer)
@@ -462,21 +451,20 @@ export function duplicateLayerTree(
 ): LayerDocument {
   const next = cloneLayerDocument(document);
   const source = findLayer(next, sourceLayerId);
+  const ids = [...subtreeIds(next, sourceLayerId)];
   const idMap = new Map<LayerId, LayerId>();
-  const sourceIds = collectSubtreeIds(next, sourceLayerId);
-
-  for (const sourceId of sourceIds) {
-    const generatedId = createId(sourceId);
-    assertLayerId(generatedId);
-    if (next.layers.some((layer) => layer.id === generatedId) || idMapHasValue(idMap, generatedId)) {
-      throw new DomainError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${generatedId}`);
+  for (const sourceId of ids) {
+    const id = createId(sourceId);
+    assertId(id);
+    if (next.layers.some((layer) => layer.id === id) || [...idMap.values()].includes(id)) {
+      throw layerError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${id}`);
     }
-    idMap.set(sourceId, generatedId);
+    idMap.set(sourceId, id);
   }
 
-  const duplicatedLayers = [...sourceIds].map((sourceId) => {
+  const copies = ids.map((sourceId) => {
     const original = findLayer(next, sourceId);
-    const duplicated = cloneLayer({
+    const copy = cloneLayer({
       ...original,
       id: idMap.get(sourceId)!,
       parentId:
@@ -487,16 +475,15 @@ export function duplicateLayerTree(
       createdAt,
       updatedAt: createdAt,
     } as Layer);
-    if (duplicated.type === 'folder') {
-      duplicated.childLayerIds = duplicated.childLayerIds.map((id) => idMap.get(id)!);
+    if (copy.type === 'folder') {
+      copy.childLayerIds = copy.childLayerIds.map((id) => idMap.get(id)!);
     }
-    return duplicated;
+    return copy;
   });
 
-  next.layers.push(...duplicatedLayers);
-  const siblings = getMutableSiblingIds(next, source.parentId);
-  const sourceIndex = siblings.indexOf(sourceLayerId);
-  siblings.splice(sourceIndex + 1, 0, idMap.get(sourceLayerId)!);
+  next.layers.push(...copies);
+  const siblings = mutableSiblings(next, source.parentId);
+  siblings.splice(siblings.indexOf(sourceLayerId) + 1, 0, idMap.get(sourceLayerId)!);
   next.activeLayerId = idMap.get(sourceLayerId)!;
   assertLayerDocumentIntegrity(pageId, next);
   return next;
@@ -508,40 +495,36 @@ export function mergeLayers(
   sourceLayerIds: readonly LayerId[],
   mergedLayer: RasterLayer,
 ): LayerDocument {
-  if (sourceLayerIds.length < 2) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'At least two layers are required');
+  const ids = [...new Set(sourceLayerIds)];
+  if (ids.length < 2 || ids.length !== sourceLayerIds.length) {
+    throw layerError('LAYER_MERGE_INVALID', 'At least two unique layers are required');
   }
   const next = cloneLayerDocument(document);
-  const uniqueIds = [...new Set(sourceLayerIds)];
-  if (uniqueIds.length !== sourceLayerIds.length) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'Duplicate merge source layer');
+  const sources = ids.map((id) => findLayer(next, id));
+  if (sources.some((layer) => layer.type === 'folder')) {
+    throw layerError('LAYER_MERGE_INVALID', 'Folders cannot be merged directly');
   }
-
-  const sourceLayers = uniqueIds.map((id) => findLayer(next, id));
-  if (sourceLayers.some((layer) => layer.type === 'folder')) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'Folders cannot be merged directly');
+  if (sources.some((layer) => layer.editLocked)) {
+    throw layerError('LAYER_LOCKED', 'Locked layers cannot be merged');
   }
-  if (sourceLayers.some((layer) => layer.editLocked)) {
-    throw new DomainError('LAYER_LOCKED', 'Locked layers cannot be merged');
-  }
-  const parentId = sourceLayers[0]!.parentId;
-  if (sourceLayers.some((layer) => layer.parentId !== parentId)) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'Merge sources must be siblings');
+  const parentId = sources[0]!.parentId;
+  if (sources.some((layer) => layer.parentId !== parentId)) {
+    throw layerError('LAYER_MERGE_INVALID', 'Merge sources must be siblings');
   }
   if (mergedLayer.pageId !== pageId || mergedLayer.parentId !== parentId) {
-    throw new DomainError('LAYER_PAGE_MISMATCH', 'Merged layer scope mismatch');
+    throw layerError('LAYER_PAGE_MISMATCH', 'Merged layer scope mismatch');
   }
   if (next.layers.some((layer) => layer.id === mergedLayer.id)) {
-    throw new DomainError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${mergedLayer.id}`);
+    throw layerError('DUPLICATE_LAYER_ID', `Duplicate layer id: ${mergedLayer.id}`);
   }
 
-  const siblings = getMutableSiblingIds(next, parentId);
-  const sourceIndexes = uniqueIds.map((id) => siblings.indexOf(id));
-  if (sourceIndexes.some((index) => index < 0)) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'Merge source order is invalid');
+  const siblings = mutableSiblings(next, parentId);
+  const indexes = ids.map((id) => siblings.indexOf(id));
+  if (indexes.some((index) => index < 0)) {
+    throw layerError('LAYER_MERGE_INVALID', 'Merge source order is invalid');
   }
-  const insertIndex = Math.min(...sourceIndexes);
-  const sourceSet = new Set(uniqueIds);
+  const insertIndex = Math.min(...indexes);
+  const sourceSet = new Set(ids);
   const retained = siblings.filter((id) => !sourceSet.has(id));
   retained.splice(insertIndex, 0, mergedLayer.id);
   siblings.splice(0, siblings.length, ...retained);
@@ -549,10 +532,7 @@ export function mergeLayers(
   next.layers.push(
     cloneLayer({
       ...mergedLayer,
-      content: {
-        ...mergedLayer.content,
-        sourceLayerIds: uniqueIds,
-      },
+      content: { ...mergedLayer.content, sourceLayerIds: ids },
     }),
   );
   next.activeLayerId = mergedLayer.id;
@@ -565,13 +545,12 @@ export function getMergeDownSourceIds(
   layerId: LayerId,
 ): [LayerId, LayerId] {
   const layer = findLayer(document, layerId);
-  const siblings = getSiblingIds(document, layer.parentId);
-  const index = siblings.indexOf(layerId);
-  const belowId = siblings[index - 1];
-  if (belowId === undefined) {
-    throw new DomainError('LAYER_MERGE_INVALID', 'There is no layer below');
+  const siblings = siblingIds(document, layer.parentId);
+  const below = siblings[siblings.indexOf(layerId) - 1];
+  if (below === undefined) {
+    throw layerError('LAYER_MERGE_INVALID', 'There is no layer below');
   }
-  return [belowId, layerId];
+  return [below, layerId];
 }
 
 export function getVisibleMergeSourceIds(document: LayerDocument): LayerId[] {
@@ -583,12 +562,12 @@ export function getVisibleMergeSourceIds(document: LayerDocument): LayerId[] {
 export function findLayer(document: LayerDocument, layerId: LayerId): Layer {
   const layer = document.layers.find((candidate) => candidate.id === layerId);
   if (layer === undefined) {
-    throw new DomainError('LAYER_NOT_FOUND', `Layer not found: ${layerId}`);
+    throw layerError('LAYER_NOT_FOUND', `Layer not found: ${layerId}`);
   }
   return layer;
 }
 
-function updateLayerById(
+function updateById(
   document: LayerDocument,
   pageId: PageId,
   layerId: LayerId,
@@ -597,120 +576,102 @@ function updateLayerById(
   const next = cloneLayerDocument(document);
   let found = false;
   next.layers = next.layers.map((layer) => {
-    if (layer.id !== layerId) {
-      return layer;
-    }
+    if (layer.id !== layerId) return layer;
     found = true;
     return cloneLayer(update(layer));
   });
-  if (!found) {
-    throw new DomainError('LAYER_NOT_FOUND', `Layer not found: ${layerId}`);
-  }
+  if (!found) throw layerError('LAYER_NOT_FOUND', `Layer not found: ${layerId}`);
   assertLayerDocumentIntegrity(pageId, next);
   return next;
 }
 
-function getSiblingIds(document: LayerDocument, parentId: LayerId | null): LayerId[] {
-  if (parentId === null) {
-    return document.rootLayerIds;
-  }
+function siblingIds(document: LayerDocument, parentId: LayerId | null): LayerId[] {
+  if (parentId === null) return document.rootLayerIds;
   const parent = findLayer(document, parentId);
   if (parent.type !== 'folder') {
-    throw new DomainError('LAYER_PARENT_INVALID', `Parent is not a folder: ${parentId}`);
+    throw layerError('LAYER_PARENT_INVALID', `Parent is not a folder: ${parentId}`);
   }
   return parent.childLayerIds;
 }
 
-function getMutableSiblingIds(
-  document: LayerDocument,
-  parentId: LayerId | null,
-): LayerId[] {
-  return getSiblingIds(document, parentId);
+function mutableSiblings(document: LayerDocument, parentId: LayerId | null): LayerId[] {
+  return siblingIds(document, parentId);
 }
 
-function collectSubtreeIds(document: LayerDocument, layerId: LayerId): Set<LayerId> {
+function subtreeIds(document: LayerDocument, layerId: LayerId): Set<LayerId> {
   const result = new Set<LayerId>();
   const visit = (id: LayerId): void => {
-    if (result.has(id)) {
-      return;
-    }
+    if (result.has(id)) return;
     const layer = findLayer(document, id);
     result.add(id);
-    if (layer.type === 'folder') {
-      for (const childId of layer.childLayerIds) {
-        visit(childId);
-      }
-    }
+    if (layer.type === 'folder') layer.childLayerIds.forEach(visit);
   };
   visit(layerId);
   return result;
 }
 
-function assertSiblingList(
+function assertSiblings(
   ids: readonly LayerId[],
   expectedParentId: LayerId | null,
-  layerMap: ReadonlyMap<LayerId, Layer>,
-  referencedIds: Set<LayerId>,
+  map: ReadonlyMap<LayerId, Layer>,
+  referenced: Set<LayerId>,
 ): void {
-  const localIds = new Set<LayerId>();
+  const local = new Set<LayerId>();
   for (const id of ids) {
-    if (localIds.has(id) || referencedIds.has(id)) {
-      throw new DomainError('DUPLICATE_LAYER_ID', `Layer referenced twice: ${id}`);
+    if (local.has(id) || referenced.has(id)) {
+      throw layerError('DUPLICATE_LAYER_ID', `Layer referenced twice: ${id}`);
     }
-    const layer = layerMap.get(id);
+    const layer = map.get(id);
     if (layer === undefined) {
-      throw new DomainError('LAYER_NOT_FOUND', `Layer not found: ${id}`);
+      throw layerError('LAYER_NOT_FOUND', `Layer not found: ${id}`);
     }
     if (layer.parentId !== expectedParentId) {
-      throw new DomainError(
-        'LAYER_PARENT_INVALID',
-        `Layer ${id} has invalid parent ${layer.parentId ?? 'root'}`,
-      );
+      throw layerError('LAYER_PARENT_INVALID', `Layer ${id} has invalid parent`);
     }
-    localIds.add(id);
-    referencedIds.add(id);
+    local.add(id);
+    referenced.add(id);
   }
 }
 
 function assertNoCycle(
   layerId: LayerId,
-  layerMap: ReadonlyMap<LayerId, Layer>,
+  map: ReadonlyMap<LayerId, Layer>,
   ancestors: Set<LayerId>,
   depth: number,
 ): void {
   if (depth > 128) {
-    throw new DomainError('LAYER_CYCLE', 'Layer folder depth exceeds 128');
+    throw layerError('LAYER_CYCLE', 'Layer folder depth exceeds 128');
   }
   if (ancestors.has(layerId)) {
-    throw new DomainError('LAYER_CYCLE', `Layer cycle detected: ${layerId}`);
+    throw layerError('LAYER_CYCLE', `Layer cycle detected: ${layerId}`);
   }
-  const layer = layerMap.get(layerId)!;
-  if (layer.type !== 'folder') {
-    return;
-  }
-  const nextAncestors = new Set(ancestors);
-  nextAncestors.add(layerId);
+  const layer = map.get(layerId)!;
+  if (layer.type !== 'folder') return;
+  const next = new Set(ancestors);
+  next.add(layerId);
   for (const childId of layer.childLayerIds) {
-    assertNoCycle(childId, layerMap, nextAncestors, depth + 1);
+    assertNoCycle(childId, map, next, depth + 1);
   }
 }
 
-function assertDocumentWithoutPageConstraint(document: LayerDocument): void {
-  if (document.layers.length === 0 && document.rootLayerIds.length === 0) {
-    return;
-  }
+function assertWithoutPage(document: LayerDocument): void {
+  if (document.layers.length === 0 && document.rootLayerIds.length === 0) return;
   const pageId = document.layers[0]?.pageId;
   if (pageId === undefined) {
-    throw new DomainError('LAYER_PARENT_INVALID', 'Layer document is invalid');
+    throw layerError('LAYER_PARENT_INVALID', 'Layer document is invalid');
   }
   assertLayerDocumentIntegrity(pageId, document);
 }
 
-function toLayerMap(document: LayerDocument): Map<LayerId, Layer> {
+function layerMap(document: LayerDocument): Map<LayerId, Layer> {
   return new Map(document.layers.map((layer) => [layer.id, layer]));
 }
 
-function assertLayerId(value: string): void {
+function layerError(code: LayerErrorCode, message: string): LayerDomainError {
+  return new LayerDomainError(code, message);
+}
+
+function assertId(value: string): void {
   if (
     value.length < 1 ||
     value.length > 160 ||
@@ -720,34 +681,34 @@ function assertLayerId(value: string): void {
   }
 }
 
-function assertLayerName(value: string): void {
+function assertName(value: string): void {
   if (value.trim().length < 1 || value.length > 120) {
     throw new DomainError('INVALID_NAME', 'Layer name must be 1 to 120 characters');
   }
 }
 
-function assertLayerProperties(layer: LayerBase): void {
+function assertProperties(layer: LayerBase): void {
   if (!Number.isFinite(layer.opacity) || layer.opacity < 0 || layer.opacity > 1) {
-    throw new DomainError(
+    throw layerError(
       'INVALID_LAYER_OPACITY',
       `Layer opacity must be between 0 and 1: ${layer.opacity}`,
     );
   }
   if (!['normal', 'multiply', 'screen', 'add', 'overlay'].includes(layer.blendMode)) {
-    throw new DomainError('INVALID_BLEND_MODE', `Invalid blend mode: ${layer.blendMode}`);
+    throw layerError('INVALID_BLEND_MODE', `Invalid blend mode: ${layer.blendMode}`);
   }
   if (layer.color !== null && !isColor(layer.color)) {
-    throw new DomainError('INVALID_LAYER_COLOR', `Invalid layer color: ${layer.color}`);
+    throw layerError('INVALID_LAYER_COLOR', `Invalid layer color: ${layer.color}`);
   }
 }
 
 function assertEditable(layer: Layer): void {
   if (layer.editLocked) {
-    throw new DomainError('LAYER_LOCKED', `Layer is locked: ${layer.id}`);
+    throw layerError('LAYER_LOCKED', `Layer is locked: ${layer.id}`);
   }
 }
 
-function assertInsertIndex(index: number, length: number): void {
+function assertIndex(index: number, length: number): void {
   if (!Number.isInteger(index) || index < 0 || index > length) {
     throw new DomainError('INVALID_PAGE_INDEX', `Invalid layer index: ${index}`);
   }
@@ -757,39 +718,31 @@ function isColor(value: string): boolean {
   return /^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/.test(value);
 }
 
-function readString(value: unknown, fallback: string): string {
+function stringValue(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
 }
 
-function readNullableString(value: unknown): string | null {
+function nullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function readStringArray(value: unknown): string[] {
+function stringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
     ? [...value]
     : [];
 }
 
-function readPositiveNumber(value: unknown, fallback: number): number {
+function positiveNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
     : fallback;
 }
 
-function readColor(value: unknown, fallback: string): string {
+function colorValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && isColor(value) ? value : fallback;
 }
 
-function readNullableColor(value: unknown): string | null {
-  return value === null ? null : readColor(value, '#FFFFFF');
-}
-
-function idMapHasValue(map: ReadonlyMap<LayerId, LayerId>, value: LayerId): boolean {
-  for (const candidate of map.values()) {
-    if (candidate === value) {
-      return true;
-    }
-  }
-  return false;
+function nullableColor(value: unknown): string | null {
+  if (value === null) return null;
+  return typeof value === 'string' && isColor(value) ? value : null;
 }
