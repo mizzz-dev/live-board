@@ -30,6 +30,11 @@ interface PublishBroadcastSnapshotResponse {
   acceptedRevision: number;
 }
 
+interface CopyObsSourceUrlResponse {
+  requestId: string;
+  copied: true;
+}
+
 interface Window {
   liveBoard?: {
     getRuntimeInfo: () => RuntimeInfo;
@@ -38,5 +43,6 @@ interface Window {
       requestId: string,
       snapshot: import('@live-board/obs-protocol').BroadcastSnapshot,
     ) => Promise<PublishBroadcastSnapshotResponse>;
+    copyObsSourceUrl: (requestId: string) => Promise<CopyObsSourceUrlResponse>;
   };
 }
