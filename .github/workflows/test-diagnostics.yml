@@ -1,4 +1,4 @@
-name: Persistence Test Diagnostics
+name: Persistence Diagnostics
 
 on:
   pull_request:
@@ -23,19 +23,36 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Capture lint output
+        shell: bash
+        run: |
+          set +e
+          pnpm lint > lint.log 2>&1
+          echo "$?" > lint-status.txt
+          exit 0
       - name: Capture persistence test output
         shell: bash
         run: |
           set +e
           pnpm --filter @live-board/persistence test > persistence-test.log 2>&1
-          status=$?
-          echo "$status" > persistence-test-status.txt
+          echo "$?" > persistence-test-status.txt
+          exit 0
+      - name: Capture desktop test output
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @live-board/desktop test > desktop-test.log 2>&1
+          echo "$?" > desktop-test-status.txt
           exit 0
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: persistence-test-diagnostics
+          name: persistence-diagnostics
           path: |
+            lint.log
+            lint-status.txt
             persistence-test.log
             persistence-test-status.txt
+            desktop-test.log
+            desktop-test-status.txt
           retention-days: 1
