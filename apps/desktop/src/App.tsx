@@ -3,6 +3,7 @@ import {
   canRedoProject,
   canUndoProject,
   createAddPageCommand,
+  createBroadcastSnapshot,
   createDeletePageCommand,
   createDuplicatePageCommand,
   createEmptyWorkspace,
@@ -17,12 +18,14 @@ import {
   undoProjectCommand,
   type ProjectCommand,
 } from '@live-board/domain';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './page-controls.css';
 
 const initialCommandState = createWorkspaceCommandState(
   createEmptyWorkspace('local-workspace'),
 );
+
+type CopyStatus = 'idle' | 'copied' | 'error';
 
 export function App() {
   const runtime = window.liveBoard?.getRuntimeInfo();
@@ -32,6 +35,10 @@ export function App() {
     null,
   );
   const [securityStatusError, setSecurityStatusError] = useState(false);
+  const [broadcastRevision, setBroadcastRevision] = useState<number | null>(null);
+  const [broadcastSyncError, setBroadcastSyncError] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+  const nextBroadcastRevisionRef = useRef(1);
 
   const workspace = commandState.workspace;
   const project =
@@ -62,6 +69,8 @@ export function App() {
       .getSecurityStatus(requestId)
       .then((status) => {
         if (active && status.requestId === requestId) {
+          nextBroadcastRevisionRef.current =
+            (status.obsBridge.latestRevision ?? 0) + 1;
           setSecurityStatus(status);
         }
       })
@@ -76,6 +85,68 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const liveBoardApi = window.liveBoard;
+
+    if (liveBoardApi === undefined || securityStatus === null) {
+      return;
+    }
+
+    let active = true;
+    const revision = nextBroadcastRevisionRef.current;
+    nextBroadcastRevisionRef.current += 1;
+    const requestId = globalThis.crypto.randomUUID();
+    const snapshot = createBroadcastSnapshot(
+      workspace,
+      project.id,
+      revision,
+    );
+
+    void liveBoardApi
+      .publishBroadcastSnapshot(requestId, snapshot)
+      .then((response) => {
+        if (active && response.requestId === requestId) {
+          setBroadcastRevision(response.acceptedRevision);
+          setBroadcastSyncError(false);
+        }
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+
+        setBroadcastSyncError(true);
+        const refreshRequestId = globalThis.crypto.randomUUID();
+        void liveBoardApi
+          .getSecurityStatus(refreshRequestId)
+          .then((status) => {
+            if (active && status.requestId === refreshRequestId) {
+              nextBroadcastRevisionRef.current =
+                (status.obsBridge.latestRevision ?? 0) + 1;
+              setSecurityStatus(status);
+            }
+          })
+          .catch(() => {
+            if (active) {
+              setSecurityStatusError(true);
+            }
+          });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    securityStatus,
+    project.id,
+    broadcastPage.id,
+    broadcastPage.name,
+    broadcastPage.width,
+    broadcastPage.height,
+    broadcastPage.dpi,
+    broadcastPage.transparent,
+  ]);
+
   const obsBridgeLabel = securityStatusError
     ? 'OBSブリッジ: 起動確認失敗'
     : securityStatus === null
@@ -84,9 +155,19 @@ export function App() {
         : 'OBSブリッジ: 起動確認中'
       : `OBSブリッジ: ${securityStatus.obsBridge.host}:${securityStatus.obsBridge.port}`;
 
+  const broadcastSyncLabel = broadcastSyncError
+    ? 'OBS同期: 再同期中'
+    : broadcastRevision === null
+      ? runtime === undefined
+        ? 'OBS同期: Browser Preview'
+        : 'OBS同期: 初期化中'
+      : `OBS同期: revision ${broadcastRevision}`;
+
   function executeCommand(command: ProjectCommand): void {
     try {
-      setCommandState(dispatchProjectCommand(commandState, command));
+      setCommandState((currentState) =>
+        dispatchProjectCommand(currentState, command),
+      );
       setDomainError(null);
     } catch (error: unknown) {
       setDomainError(
@@ -132,6 +213,26 @@ export function App() {
     );
   }
 
+  function copyObsSourceUrl(): void {
+    const liveBoardApi = window.liveBoard;
+
+    if (liveBoardApi === undefined) {
+      return;
+    }
+
+    const requestId = globalThis.crypto.randomUUID();
+    setCopyStatus('idle');
+
+    void liveBoardApi
+      .copyObsSourceUrl(requestId)
+      .then((response) => {
+        setCopyStatus(
+          response.requestId === requestId && response.copied ? 'copied' : 'error',
+        );
+      })
+      .catch(() => setCopyStatus('error'));
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -142,6 +243,18 @@ export function App() {
         <div className="topbar-actions">
           <span className="status-dot" aria-hidden="true" />
           <span>{obsBridgeLabel}</span>
+          <span>{broadcastSyncLabel}</span>
+          <button
+            type="button"
+            disabled={window.liveBoard === undefined}
+            onClick={copyObsSourceUrl}
+          >
+            {copyStatus === 'copied'
+              ? 'OBS URLコピー済み'
+              : copyStatus === 'error'
+                ? 'OBS URLコピー失敗'
+                : 'OBS URLをコピー'}
+          </button>
           <button
             type="button"
             disabled={editPage.id === broadcastPage.id}
@@ -205,6 +318,7 @@ export function App() {
           <span>
             履歴: {projectHistory.past.length} / Redo {projectHistory.future.length}
           </span>
+          <span>{broadcastSyncLabel}</span>
           <span>
             {runtime
               ? `${runtime.platform} / Electron ${runtime.versions.electron}`
@@ -232,7 +346,9 @@ export function App() {
               type="button"
               disabled={!canUndoProject(commandState, project.id)}
               onClick={() => {
-                setCommandState(undoProjectCommand(commandState, project.id));
+                setCommandState((currentState) =>
+                  undoProjectCommand(currentState, project.id),
+                );
                 setDomainError(null);
               }}
             >
@@ -242,7 +358,9 @@ export function App() {
               type="button"
               disabled={!canRedoProject(commandState, project.id)}
               onClick={() => {
-                setCommandState(redoProjectCommand(commandState, project.id));
+                setCommandState((currentState) =>
+                  redoProjectCommand(currentState, project.id),
+                );
                 setDomainError(null);
               }}
             >
