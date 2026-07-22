@@ -1,3 +1,7 @@
+.workspace {
+  grid-template-rows: 44px auto auto minmax(0, 1fr) 30px;
+}
+
 .canvas-toolbar,
 .viewport-toolbar {
   display: flex;
@@ -51,5 +55,14 @@
 }
 
 .canvas-stage {
+  display: block;
   min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.statusbar {
+  justify-content: flex-start;
+  overflow-x: auto;
+  white-space: nowrap;
 }
