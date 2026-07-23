@@ -17,6 +17,11 @@ import {
 import type { AddressInfo } from 'node:net';
 import { extname, resolve, sep } from 'node:path';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import {
+  BroadcastAssetRegistry,
+  type BroadcastAssetRegistryStats,
+  type StoredBroadcastAsset,
+} from './asset-registry.js';
 
 const DEFAULT_HOST = '127.0.0.1' as const;
 const DEFAULT_MAX_CONNECTIONS = 4;
@@ -38,6 +43,9 @@ export interface ObsBridgeOptions {
   overlayRoot?: string;
   initialSnapshot?: BroadcastSnapshot;
   pageTransition?: PageTransition;
+  maxAssetBytes?: number;
+  assetRetentionMs?: number;
+  now?: () => number;
 }
 
 export interface ObsBridgeInfo {
@@ -51,6 +59,7 @@ export interface ObsBridge {
   readonly info: ObsBridgeInfo;
   getConnectionCount(): number;
   getLatestRevision(): number | null;
+  getAssetStats(): BroadcastAssetRegistryStats;
   publishSnapshot(snapshot: BroadcastSnapshot): number;
   close(): Promise<void>;
 }
@@ -138,6 +147,11 @@ export async function startObsBridge(
   validateOptions({ host, port, maxConnections, maxPayloadBytes });
 
   const token = randomBytes(TOKEN_BYTES).toString('hex');
+  const assetRegistry = new BroadcastAssetRegistry({
+    maxBytes: options.maxAssetBytes,
+    retentionMs: options.assetRetentionMs,
+    now: options.now,
+  });
   const configuredOrigins = new Set(
     (options.allowedOrigins ?? []).map(normalizeOrigin),
   );
@@ -151,7 +165,10 @@ export async function startObsBridge(
   let latestSnapshot =
     options.initialSnapshot === undefined
       ? undefined
-      : parseBroadcastSnapshot(options.initialSnapshot);
+      : assetRegistry.prepareSnapshot(
+          parseBroadcastSnapshot(options.initialSnapshot),
+          token,
+        );
 
   const server = createServer((request, response) => {
     void handleHttpRequest(
@@ -160,6 +177,7 @@ export async function startObsBridge(
       token,
       ownOrigin,
       options.overlayRoot,
+      assetRegistry,
     ).catch(() => {
       if (!response.headersSent) {
         response.writeHead(500, {
@@ -242,14 +260,16 @@ export async function startObsBridge(
     info,
     getConnectionCount: () => webSocketServer.clients.size,
     getLatestRevision: () => latestSnapshot?.revision ?? null,
+    getAssetStats: () => assetRegistry.getStats(),
     publishSnapshot: (input) => {
-      const snapshot = parseBroadcastSnapshot(input);
+      const parsedSnapshot = parseBroadcastSnapshot(input);
       if (
         latestSnapshot !== undefined &&
-        snapshot.revision <= latestSnapshot.revision
+        parsedSnapshot.revision <= latestSnapshot.revision
       ) {
         throw new Error('OBS_BRIDGE_STALE_REVISION');
       }
+      const snapshot = assetRegistry.prepareSnapshot(parsedSnapshot, token);
 
       const message = createSnapshotMessage(
         latestSnapshot,
@@ -263,6 +283,7 @@ export async function startObsBridge(
       return snapshot.revision;
     },
     close: async () => {
+      assetRegistry.clear();
       for (const client of webSocketServer.clients) client.terminate();
       await Promise.all([
         new Promise<void>((resolvePromise) => {
@@ -305,6 +326,7 @@ async function handleHttpRequest(
   token: string,
   ownOrigin: string,
   overlayRoot: string | undefined,
+  assetRegistry: BroadcastAssetRegistry,
 ): Promise<void> {
   if (!isLoopbackAddress(request.socket.remoteAddress)) {
     response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -320,6 +342,14 @@ async function handleHttpRequest(
   if (request.method === 'GET' && requestUrl.pathname === '/health') {
     response.writeHead(204);
     response.end();
+    return;
+  }
+
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    requestUrl.pathname.startsWith('/asset/')
+  ) {
+    serveRegisteredAsset(request, response, requestUrl, token, assetRegistry);
     return;
   }
 
@@ -384,6 +414,64 @@ async function handleHttpRequest(
 
   response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   response.end('Not Found');
+}
+
+function serveRegisteredAsset(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requestUrl: URL,
+  token: string,
+  assetRegistry: BroadcastAssetRegistry,
+): void {
+  const match = /^\/asset\/([0-9a-f]{64})\/([0-9a-f]{64})$/.exec(
+    requestUrl.pathname,
+  );
+  if (match === null || requestUrl.search !== '') {
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Not Found');
+    return;
+  }
+  if (!isValidToken(token, match[1] ?? null)) {
+    response.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Unauthorized');
+    return;
+  }
+  const asset = assetRegistry.get(match[2]!);
+  if (asset === undefined) {
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Not Found');
+    return;
+  }
+
+  const etag = `"${asset.sha256}"`;
+  const headers = createAssetHeaders(asset, etag);
+  if (request.headers['if-none-match'] === etag) {
+    response.writeHead(304, headers);
+    response.end();
+    return;
+  }
+  response.writeHead(200, headers);
+  if (request.method === 'HEAD') response.end();
+  else response.end(asset.bytes);
+}
+
+function createAssetHeaders(
+  asset: StoredBroadcastAsset,
+  etag: string,
+): Record<string, string | number> {
+  const headers: Record<string, string | number> = {
+    'Content-Type': asset.mime,
+    'Content-Length': asset.byteLength,
+    'Cache-Control': 'private, max-age=31536000, immutable',
+    ETag: etag,
+    'X-Content-Type-Options': 'nosniff',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Referrer-Policy': 'no-referrer',
+  };
+  if (asset.mime === 'image/svg+xml') {
+    headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
+  }
+  return headers;
 }
 
 function registerClientMessageHandler(

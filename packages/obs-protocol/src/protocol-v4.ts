@@ -39,17 +39,30 @@ export type BroadcastAssetMime =
   | 'image/gif'
   | 'image/svg+xml';
 
-export interface BroadcastAsset {
+interface BroadcastAssetBase {
   id: string;
   sha256: string;
   mime: BroadcastAssetMime;
   width: number;
   height: number;
   byteLength: number;
-  dataUrl: string;
   animated: false;
   sanitized: boolean;
 }
+
+export interface InlineBroadcastAsset extends BroadcastAssetBase {
+  delivery?: 'inline';
+  dataUrl: string;
+  url?: never;
+}
+
+export interface HttpBroadcastAsset extends BroadcastAssetBase {
+  delivery: 'http';
+  url: string;
+  dataUrl?: never;
+}
+
+export type BroadcastAsset = InlineBroadcastAsset | HttpBroadcastAsset;
 
 type BaseTextLayer = Extract<BaseBroadcastLayer, { type: 'text' }>;
 type BaseImageLayer = Extract<BaseBroadcastLayer, { type: 'image' }>;
@@ -121,26 +134,65 @@ export function parseBroadcastAsset(input: unknown): BroadcastAsset {
     !Number.isSafeInteger(input.byteLength) ||
     input.byteLength < 1 ||
     input.byteLength > 25 * 1024 * 1024 ||
-    typeof input.dataUrl !== 'string' ||
-    input.dataUrl.length > 36 * 1024 * 1024 ||
-    !input.dataUrl.startsWith(`data:${input.mime};base64,`) ||
     input.animated !== false ||
     typeof input.sanitized !== 'boolean' ||
     (input.mime === 'image/svg+xml' && !input.sanitized)
   ) {
     throw new Error('OBS_PROTOCOL_INVALID_ASSET');
   }
-  return {
+
+  const base = {
     id: input.id,
     sha256: input.sha256.toLowerCase(),
     mime: input.mime,
     width: input.width,
     height: input.height,
     byteLength: input.byteLength,
-    dataUrl: input.dataUrl,
-    animated: false,
+    animated: false as const,
     sanitized: input.sanitized,
   };
+
+  if (input.delivery === 'http') {
+    if (
+      typeof input.url !== 'string' ||
+      input.dataUrl !== undefined ||
+      !isHttpAssetUrl(input.url, base.sha256)
+    ) {
+      throw new Error('OBS_PROTOCOL_INVALID_ASSET');
+    }
+    return { ...base, delivery: 'http', url: input.url };
+  }
+
+  if (
+    input.delivery !== undefined &&
+    input.delivery !== 'inline'
+  ) {
+    throw new Error('OBS_PROTOCOL_INVALID_ASSET');
+  }
+  if (
+    typeof input.dataUrl !== 'string' ||
+    input.url !== undefined ||
+    input.dataUrl.length > 36 * 1024 * 1024 ||
+    !input.dataUrl.startsWith(`data:${input.mime};base64,`)
+  ) {
+    throw new Error('OBS_PROTOCOL_INVALID_ASSET');
+  }
+  return { ...base, dataUrl: input.dataUrl };
+}
+
+export function isInlineBroadcastAsset(
+  asset: BroadcastAsset,
+): asset is InlineBroadcastAsset {
+  return asset.delivery !== 'http';
+}
+
+export function getBroadcastAssetSource(asset: BroadcastAsset): string {
+  return isInlineBroadcastAsset(asset) ? asset.dataUrl : asset.url;
+}
+
+function isHttpAssetUrl(value: string, sha256: string): boolean {
+  const match = /^\/asset\/([0-9a-f]{64})\/([0-9a-f]{64})$/.exec(value);
+  return match !== null && match[2] === sha256;
 }
 
 export function parseBroadcastLayer(input: unknown): BroadcastLayer {

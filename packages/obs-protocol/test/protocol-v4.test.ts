@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getBroadcastAssetSource,
   parseBroadcastAsset,
   parseBroadcastSnapshot,
   type BroadcastSnapshot,
@@ -145,6 +146,32 @@ describe('OBS protocol v4', () => {
       mime: 'image/svg+xml',
       dataUrl: 'data:image/svg+xml;base64,PHN2Zy8+',
       sanitized: false,
+    })).toThrow('OBS_PROTOCOL_INVALID_ASSET');
+  });
+
+  it('認証付きloopback HTTP Assetを受け入れ、外部URLとhash不一致を拒否する', () => {
+    const token = 'b'.repeat(64);
+    const httpAsset = parseBroadcastAsset({
+      ...asset,
+      dataUrl: undefined,
+      delivery: 'http',
+      url: `/asset/${token}/${asset.sha256}`,
+    });
+    expect(getBroadcastAssetSource(httpAsset)).toBe(
+      `/asset/${token}/${asset.sha256}`,
+    );
+    expect(getBroadcastAssetSource(parseBroadcastAsset(asset))).toBe(asset.dataUrl);
+    expect(() => parseBroadcastAsset({
+      ...asset,
+      dataUrl: undefined,
+      delivery: 'http',
+      url: 'https://example.com/asset.png',
+    })).toThrow('OBS_PROTOCOL_INVALID_ASSET');
+    expect(() => parseBroadcastAsset({
+      ...asset,
+      dataUrl: undefined,
+      delivery: 'http',
+      url: `/asset/${token}/${'0'.repeat(64)}`,
     })).toThrow('OBS_PROTOCOL_INVALID_ASSET');
   });
 
