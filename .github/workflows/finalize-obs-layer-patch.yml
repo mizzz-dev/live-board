@@ -1,0 +1,30 @@
+name: Finalize OBS Layer Patch
+
+on:
+  push:
+    branches:
+      - feat/obs-layer-patch
+    paths:
+      - .github/finalize-obs-layer-patch.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/obs-layer-patch
+          fetch-depth: 0
+      - name: Apply final adjustments
+        run: python3 scripts/finalize_obs_layer_patch.py
+      - name: Commit adjustments
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Overlayの欠番計測とREADMEをLayer差分転送へ更新"
+          git push origin HEAD:feat/obs-layer-patch
