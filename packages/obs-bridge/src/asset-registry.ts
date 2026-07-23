@@ -1,7 +1,13 @@
 import {
   isInlineBroadcastAsset,
+  parseBroadcastAssetRegistration,
+  parseBroadcastSnapshotDescriptor,
+  toBroadcastSnapshotDescriptor,
+  type BroadcastAssetDescriptor,
   type BroadcastAssetMime,
+  type BroadcastAssetRegistration,
   type BroadcastSnapshot,
+  type BroadcastSnapshotDescriptor,
   type HttpBroadcastAsset,
   type InlineBroadcastAsset,
 } from '@live-board/obs-protocol';
@@ -34,11 +40,17 @@ export interface BroadcastAssetRegistryOptions {
   now?: (() => number) | undefined;
 }
 
+interface PreparedRegistration {
+  descriptor: BroadcastAssetDescriptor;
+  bytes: Buffer;
+}
+
 export class BroadcastAssetRegistry {
   private readonly entries = new Map<string, StoredBroadcastAsset>();
   private readonly maxBytes: number;
   private readonly retentionMs: number;
   private readonly now: () => number;
+  private activeHashes = new Set<string>();
   private totalBytes = 0;
 
   constructor(options: BroadcastAssetRegistryOptions = {}) {
@@ -61,43 +73,80 @@ export class BroadcastAssetRegistry {
     }
   }
 
-  prepareSnapshot(snapshot: BroadcastSnapshot, token: string): BroadcastSnapshot {
-    if (!/^[0-9a-f]{64}$/.test(token)) {
-      throw new Error('OBS_BRIDGE_INVALID_ASSET_TOKEN');
-    }
+  registerAssets(input: readonly BroadcastAssetRegistration[]): string[] {
     const now = this.now();
-    const prepared = (snapshot.assets ?? []).map((asset) => {
+    const prepared = input.map((asset) => {
+      const parsed = parseBroadcastAssetRegistration(asset);
+      return verifyRegistration(parsed);
+    });
+    const requestHashes = new Set<string>();
+    for (const item of prepared) {
+      if (requestHashes.has(item.descriptor.sha256)) {
+        throw new Error('OBS_BRIDGE_DUPLICATE_ASSET_REGISTRATION');
+      }
+      requestHashes.add(item.descriptor.sha256);
+      this.assertCompatibleMetadata(item.descriptor);
+    }
+
+    const additionalBytes = prepared.reduce(
+      (total, item) =>
+        total + (this.entries.has(item.descriptor.sha256) ? 0 : item.bytes.length),
+      0,
+    );
+    const protectedHashes = new Set([...this.activeHashes, ...requestHashes]);
+    const evictionHashes = this.planEvictions(additionalBytes, protectedHashes, now);
+
+    for (const sha256 of evictionHashes) this.delete(sha256);
+    for (const item of prepared) {
+      this.upsert(item.descriptor, item.bytes, now);
+    }
+    return [...requestHashes];
+  }
+
+  prepareSnapshot(snapshot: BroadcastSnapshot, token: string): BroadcastSnapshot {
+    const registrations = (snapshot.assets ?? []).map((asset) => {
       if (!isInlineBroadcastAsset(asset)) {
         throw new Error('OBS_BRIDGE_HTTP_ASSET_INPUT_NOT_ALLOWED');
       }
-      return { asset, bytes: decodeAndVerifyAsset(asset) };
+      return decodeInlineRegistration(asset);
     });
-    const currentBytes = prepared.reduce((total, item) => total + item.bytes.length, 0);
-    if (currentBytes > this.maxBytes) {
-      throw new Error('OBS_BRIDGE_ASSET_REGISTRY_LIMIT');
-    }
+    this.registerAssets(registrations);
+    return this.prepareSnapshotDescriptor(
+      toBroadcastSnapshotDescriptor(snapshot),
+      token,
+    );
+  }
 
-    for (const item of prepared) {
-      this.assertCompatibleMetadata(item.asset);
+  prepareSnapshotDescriptor(
+    input: BroadcastSnapshotDescriptor,
+    token: string,
+  ): BroadcastSnapshot {
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      throw new Error('OBS_BRIDGE_INVALID_ASSET_TOKEN');
     }
-
+    const snapshot = parseBroadcastSnapshotDescriptor(input);
+    const now = this.now();
+    const descriptors = snapshot.assets ?? [];
     const currentHashes = new Set<string>();
-    for (const item of prepared) {
-      currentHashes.add(item.asset.sha256);
-      this.upsert(item.asset, item.bytes, now);
+
+    for (const descriptor of descriptors) {
+      const entry = this.entries.get(descriptor.sha256);
+      if (entry === undefined) {
+        throw new Error('OBS_BRIDGE_ASSET_NOT_REGISTERED');
+      }
+      this.assertEntryMetadata(entry, descriptor);
+      currentHashes.add(descriptor.sha256);
     }
-    this.prune(currentHashes, now);
+
+    for (const sha256 of currentHashes) {
+      this.entries.get(sha256)!.lastReferencedAt = now;
+    }
+    this.activeHashes = currentHashes;
+    this.pruneExpired(currentHashes, now);
 
     if (snapshot.assets === undefined) return snapshot;
-    const assets: HttpBroadcastAsset[] = prepared.map(({ asset }) => ({
-      id: asset.id,
-      sha256: asset.sha256,
-      mime: asset.mime,
-      width: asset.width,
-      height: asset.height,
-      byteLength: asset.byteLength,
-      animated: false,
-      sanitized: asset.sanitized,
+    const assets: HttpBroadcastAsset[] = descriptors.map((asset) => ({
+      ...asset,
       delivery: 'http',
       url: `/asset/${token}/${asset.sha256}`,
     }));
@@ -122,24 +171,35 @@ export class BroadcastAssetRegistry {
 
   clear(): void {
     this.entries.clear();
+    this.activeHashes.clear();
     this.totalBytes = 0;
   }
 
-  private assertCompatibleMetadata(asset: InlineBroadcastAsset): void {
+  private assertCompatibleMetadata(asset: BroadcastAssetDescriptor): void {
     const existing = this.entries.get(asset.sha256);
+    if (existing !== undefined) this.assertEntryMetadata(existing, asset);
+  }
+
+  private assertEntryMetadata(
+    existing: StoredBroadcastAsset,
+    asset: BroadcastAssetDescriptor,
+  ): void {
     if (
-      existing !== undefined &&
-      (existing.mime !== asset.mime ||
-        existing.width !== asset.width ||
-        existing.height !== asset.height ||
-        existing.byteLength !== asset.byteLength ||
-        existing.sanitized !== asset.sanitized)
+      existing.mime !== asset.mime ||
+      existing.width !== asset.width ||
+      existing.height !== asset.height ||
+      existing.byteLength !== asset.byteLength ||
+      existing.sanitized !== asset.sanitized
     ) {
       throw new Error('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
     }
   }
 
-  private upsert(asset: InlineBroadcastAsset, bytes: Buffer, now: number): void {
+  private upsert(
+    asset: BroadcastAssetDescriptor,
+    bytes: Buffer,
+    now: number,
+  ): void {
     const existing = this.entries.get(asset.sha256);
     if (existing !== undefined) {
       existing.lastReferencedAt = now;
@@ -158,7 +218,31 @@ export class BroadcastAssetRegistry {
     this.totalBytes += bytes.length;
   }
 
-  private prune(currentHashes: ReadonlySet<string>, now: number): void {
+  private planEvictions(
+    additionalBytes: number,
+    protectedHashes: ReadonlySet<string>,
+    now: number,
+  ): string[] {
+    let projectedBytes = this.totalBytes + additionalBytes;
+    if (projectedBytes <= this.maxBytes) return [];
+
+    const candidates = [...this.entries.values()]
+      .filter((entry) => !protectedHashes.has(entry.sha256))
+      .sort((a, b) => {
+        const aExpired = now - a.lastReferencedAt > this.retentionMs ? 0 : 1;
+        const bExpired = now - b.lastReferencedAt > this.retentionMs ? 0 : 1;
+        return aExpired - bExpired || a.lastReferencedAt - b.lastReferencedAt;
+      });
+    const evictions: string[] = [];
+    for (const entry of candidates) {
+      evictions.push(entry.sha256);
+      projectedBytes -= entry.byteLength;
+      if (projectedBytes <= this.maxBytes) return evictions;
+    }
+    throw new Error('OBS_BRIDGE_ASSET_REGISTRY_LIMIT');
+  }
+
+  private pruneExpired(currentHashes: ReadonlySet<string>, now: number): void {
     for (const [sha256, entry] of this.entries) {
       if (
         !currentHashes.has(sha256) &&
@@ -167,29 +251,20 @@ export class BroadcastAssetRegistry {
         this.delete(sha256);
       }
     }
-    if (this.totalBytes <= this.maxBytes) return;
-
-    const removable = [...this.entries.values()]
-      .filter((entry) => !currentHashes.has(entry.sha256))
-      .sort((a, b) => a.lastReferencedAt - b.lastReferencedAt);
-    for (const entry of removable) {
-      this.delete(entry.sha256);
-      if (this.totalBytes <= this.maxBytes) return;
-    }
-    if (this.totalBytes > this.maxBytes) {
-      throw new Error('OBS_BRIDGE_ASSET_REGISTRY_LIMIT');
-    }
   }
 
   private delete(sha256: string): void {
     const entry = this.entries.get(sha256);
     if (entry === undefined) return;
     this.entries.delete(sha256);
+    this.activeHashes.delete(sha256);
     this.totalBytes -= entry.byteLength;
   }
 }
 
-function decodeAndVerifyAsset(asset: InlineBroadcastAsset): Buffer {
+function decodeInlineRegistration(
+  asset: InlineBroadcastAsset,
+): BroadcastAssetRegistration {
   const prefix = `data:${asset.mime};base64,`;
   if (!asset.dataUrl.startsWith(prefix)) {
     throw new Error('OBS_BRIDGE_INVALID_ASSET_DATA_URL');
@@ -209,9 +284,27 @@ function decodeAndVerifyAsset(asset: InlineBroadcastAsset): Buffer {
   ) {
     throw new Error('OBS_BRIDGE_INVALID_ASSET_DATA_URL');
   }
+  return {
+    id: asset.id,
+    sha256: asset.sha256,
+    mime: asset.mime,
+    width: asset.width,
+    height: asset.height,
+    byteLength: asset.byteLength,
+    animated: false,
+    sanitized: asset.sanitized,
+    bytes,
+  };
+}
+
+function verifyRegistration(
+  registration: BroadcastAssetRegistration,
+): PreparedRegistration {
+  const bytes = Buffer.from(registration.bytes);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
-  if (sha256 !== asset.sha256) {
+  if (sha256 !== registration.sha256) {
     throw new Error('OBS_BRIDGE_ASSET_HASH_MISMATCH');
   }
-  return bytes;
+  const { bytes: _bytes, ...descriptor } = registration;
+  return { descriptor, bytes };
 }
