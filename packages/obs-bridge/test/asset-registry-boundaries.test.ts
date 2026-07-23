@@ -13,6 +13,8 @@ function createAsset(
   options: {
     id?: string;
     mime?: 'image/png' | 'image/jpeg';
+    width?: number;
+    height?: number;
   } = {},
 ): InlineBroadcastAsset {
   const bytes = Buffer.from(content);
@@ -21,8 +23,8 @@ function createAsset(
     id: options.id ?? 'asset:boundary',
     sha256: createHash('sha256').update(bytes).digest('hex'),
     mime,
-    width: 1,
-    height: 1,
+    width: options.width ?? 1,
+    height: options.height ?? 1,
     byteLength: bytes.length,
     dataUrl: `data:${mime};base64,${bytes.toString('base64')}`,
     animated: false,
@@ -30,7 +32,9 @@ function createAsset(
   };
 }
 
-function createSnapshot(asset: InlineBroadcastAsset): BroadcastSnapshot {
+function createSnapshot(
+  input: InlineBroadcastAsset | InlineBroadcastAsset[],
+): BroadcastSnapshot {
   return {
     schemaVersion: 1,
     projectId: 'project-1',
@@ -53,7 +57,7 @@ function createSnapshot(asset: InlineBroadcastAsset): BroadcastSnapshot {
       customCssEnabled: false,
       customCssFallback: false,
     },
-    assets: [asset],
+    assets: Array.isArray(input) ? input : [input],
     layers: [],
   };
 }
@@ -76,21 +80,49 @@ describe('BroadcastAssetRegistry境界', () => {
     expect(registry.getStats()).toMatchObject({ count: 0, totalBytes: 0 });
   });
 
-  it('同一SHA-256に異なるMIME metadataを割り当てない', () => {
+  it('同一SHA-256に異なるMIME・寸法metadataを割り当てない', () => {
     const registry = new BroadcastAssetRegistry();
-    const png = createAsset('same-content', { mime: 'image/png' });
-    const jpeg = createAsset('same-content', {
+    const original = createAsset('same-content');
+    const mimeMismatch = createAsset('same-content', {
       id: 'asset:jpeg-alias',
       mime: 'image/jpeg',
     });
+    const dimensionMismatch = createAsset('same-content', {
+      id: 'asset:size-alias',
+      width: 2,
+    });
 
-    registry.prepareSnapshot(createSnapshot(png), validToken);
-    expect(() => registry.prepareSnapshot(createSnapshot(jpeg), validToken)).toThrow(
-      'OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH',
-    );
+    registry.prepareSnapshot(createSnapshot(original), validToken);
+    expect(() =>
+      registry.prepareSnapshot(createSnapshot(mimeMismatch), validToken),
+    ).toThrow('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
+    expect(() =>
+      registry.prepareSnapshot(createSnapshot(dimensionMismatch), validToken),
+    ).toThrow('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
     expect(registry.getStats()).toMatchObject({
       count: 1,
-      totalBytes: png.byteLength,
+      totalBytes: original.byteLength,
+    });
+  });
+
+  it('複数Assetの後半で検証失敗しても前半だけを登録しない', () => {
+    const registry = new BroadcastAssetRegistry();
+    const existing = createAsset('existing');
+    const newAsset = createAsset('new-asset', { id: 'asset:new' });
+    const conflict = createAsset('existing', {
+      id: 'asset:conflict',
+      mime: 'image/jpeg',
+    });
+
+    registry.prepareSnapshot(createSnapshot(existing), validToken);
+    expect(() =>
+      registry.prepareSnapshot(createSnapshot([newAsset, conflict]), validToken),
+    ).toThrow('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
+
+    expect(registry.get(newAsset.sha256)).toBeUndefined();
+    expect(registry.getStats()).toMatchObject({
+      count: 1,
+      totalBytes: existing.byteLength,
     });
   });
 
