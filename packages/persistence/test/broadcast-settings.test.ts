@@ -52,7 +52,7 @@ describe('配信設定の永続化境界', () => {
     });
   });
 
-  it('危険CSSをArchiveへ残さずテーマ表示へフォールバックする', () => {
+  it('危険CSSをArchiveへ残さず安全なテーマ状態へ正規化する', () => {
     const workspace = createEmptyWorkspace('unsafe-css-workspace');
     const project = workspace.projects[0]!;
     project.broadcastSettings = {
@@ -72,7 +72,7 @@ describe('配信設定の永続化境界', () => {
 
     expect(settings.customCss).toBe('');
     expect(settings.customCssEnabled).toBe(false);
-    expect(settings.customCssFallback).toBe(true);
+    expect(settings.customCssFallback).toBe(false);
     expect(settings.theme).toBe('transparent');
   });
 
