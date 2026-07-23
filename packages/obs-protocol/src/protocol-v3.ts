@@ -90,7 +90,7 @@ export type BroadcastLayer =
 export interface BroadcastSnapshot
   extends Omit<BaseBroadcastSnapshot, 'layers'> {
   layers: BroadcastLayer[];
-  overlay: BroadcastOverlaySettings;
+  overlay?: BroadcastOverlaySettings;
 }
 
 export type ObsBridgeServerMessage =
