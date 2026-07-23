@@ -48,7 +48,7 @@ replaceOnce(
 );
 
 replaceOnce(
-  '- [永続化・自動保存・クラッシュ復元](docs/persistence.md)\n- [ロードマップ](docs/roadmap.md)',
+  '- [永続化・自動保存・クラッシュ復元](docs/persistence.md)\n- [配信性能・長時間安定性試験](docs/performance.md)\n- [ロードマップ](docs/roadmap.md)',
   '- [永続化・自動保存・クラッシュ復元](docs/persistence.md)\n- [画像Assetのloopback HTTP配信](docs/asset-http-delivery.md)\n- [配信性能・長時間安定性試験](docs/performance.md)\n- [ロードマップ](docs/roadmap.md)',
 );
 
