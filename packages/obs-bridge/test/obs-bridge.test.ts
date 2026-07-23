@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,46 @@ const snapshot: BroadcastSnapshot = {
     customCssFallback: false,
   },
   layers: [],
+};
+
+const httpAssetBytes = Buffer.from('live-board-http-asset');
+const httpAssetHash = createHash('sha256').update(httpAssetBytes).digest('hex');
+const httpAssetSnapshot: BroadcastSnapshot = {
+  ...snapshot,
+  assets: [
+    {
+      id: 'asset:http',
+      sha256: httpAssetHash,
+      mime: 'image/png',
+      width: 1,
+      height: 1,
+      byteLength: httpAssetBytes.length,
+      dataUrl: `data:image/png;base64,${httpAssetBytes.toString('base64')}`,
+      animated: false,
+      sanitized: false,
+    },
+  ],
+  layers: [
+    {
+      id: 'image-http',
+      parentId: null,
+      name: 'HTTP画像',
+      type: 'image',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      color: null,
+      transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      content: {
+        assetId: 'asset:http',
+        width: 1,
+        height: 1,
+        crop: { x: 0, y: 0, width: 1, height: 1 },
+        flipX: false,
+        flipY: false,
+      },
+    },
+  ],
 };
 
 afterEach(async () => {
@@ -223,6 +264,60 @@ describe('OBS bridge', () => {
     await once(reconnected, 'close');
   });
 
+  it('画像data URLをWebSocketへ送らず、認証付きhash URLから配信する', async () => {
+    activeBridge = await startObsBridge({ initialSnapshot: httpAssetSnapshot });
+    const origin = new URL(activeBridge.info.overlayUrl).origin;
+    const webSocket = new WebSocket(activeBridge.info.webSocketUrl, { origin });
+    const messagePromise = once(webSocket, 'message');
+    await once(webSocket, 'open');
+    const [rawMessage] = await messagePromise;
+    const message = JSON.parse(rawMessage.toString());
+
+    expect(JSON.stringify(message)).not.toContain('data:image');
+    expect(message.snapshot.assets).toHaveLength(1);
+    const deliveredAsset = message.snapshot.assets[0];
+    expect(deliveredAsset).toMatchObject({
+      sha256: httpAssetHash,
+      delivery: 'http',
+    });
+    expect(deliveredAsset.url.startsWith('/asset/')).toBe(true);
+    expect(deliveredAsset.url.endsWith(`/${httpAssetHash}`)).toBe(true);
+    expect(deliveredAsset.url.split('/')[2]).toMatch(/^[0-9a-f]{64}$/);
+
+    const response = await fetch(`${origin}${deliveredAsset.url}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+    const etag = response.headers.get('etag');
+    expect(etag).toBe(`"${httpAssetHash}"`);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(httpAssetBytes);
+
+    const cached = await fetch(`${origin}${deliveredAsset.url}`, {
+      headers: { 'If-None-Match': etag! },
+    });
+    expect(cached.status).toBe(304);
+    const head = await fetch(`${origin}${deliveredAsset.url}`, { method: 'HEAD' });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe('');
+
+    const pathParts = deliveredAsset.url.split('/');
+    const validToken = pathParts[2]!;
+    pathParts[2] = validToken.startsWith('0')
+      ? `1${validToken.slice(1)}`
+      : `0${validToken.slice(1)}`;
+    expect((await fetch(`${origin}${pathParts.join('/')}`)).status).toBe(401);
+    expect((await fetch(
+      `${origin}/asset/${validToken}/${'0'.repeat(64)}`,
+    )).status).toBe(404);
+    expect(activeBridge.getAssetStats()).toMatchObject({
+      count: 1,
+      totalBytes: httpAssetBytes.length,
+    });
+
+    webSocket.close();
+    await once(webSocket, 'close');
+  });
   it('不正tokenと外部OriginをUpgrade前に拒否する', async () => {
     activeBridge = await startObsBridge();
     const origin = new URL(activeBridge.info.overlayUrl).origin;

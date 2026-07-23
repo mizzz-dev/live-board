@@ -1,10 +1,11 @@
-import type {
-  BroadcastAsset,
-  BroadcastImageLayer,
-  BroadcastLayer,
-  BroadcastShapeLayer,
-  BroadcastSnapshot,
-  BroadcastTextLayer,
+import {
+  getBroadcastAssetSource,
+  type BroadcastAsset,
+  type BroadcastImageLayer,
+  type BroadcastLayer,
+  type BroadcastShapeLayer,
+  type BroadcastSnapshot,
+  type BroadcastTextLayer,
 } from '@live-board/obs-protocol';
 import {
   CanvasRenderer as RasterCanvasRenderer,
@@ -191,7 +192,7 @@ export class RichCanvasRenderer {
       image.onerror = () => {
         this.pending.delete(asset.id);
       };
-      image.src = asset.dataUrl;
+      image.src = getBroadcastAssetSource(asset);
     }
   }
 }
