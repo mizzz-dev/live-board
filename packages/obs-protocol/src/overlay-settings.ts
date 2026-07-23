@@ -96,6 +96,7 @@ const FORBIDDEN_CSS_PATTERNS: ReadonlyArray<{
   { pattern: /@import\b/i, reason: '@importは利用できません' },
   { pattern: /@font-face\b/i, reason: '@font-faceは利用できません' },
   { pattern: /@namespace\b/i, reason: '@namespaceは利用できません' },
+  { pattern: /<\/?style\b/i, reason: 'styleタグ断片は利用できません' },
   { pattern: /url\s*\(/i, reason: 'url()は利用できません' },
   { pattern: /expression\s*\(/i, reason: 'expression()は利用できません' },
   { pattern: /(?:javascript|data|file|ftp|https?):\s*/i, reason: '外部schemeは利用できません' },

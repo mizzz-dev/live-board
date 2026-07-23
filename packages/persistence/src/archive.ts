@@ -3,6 +3,7 @@ import {
   assertLayerDocumentIntegrity,
   assertWorkspaceIntegrity,
   createProjectAssetLibrary,
+  getBroadcastOverlaySettings,
   getLayerDocument,
   getLayerTransform,
   getRasterDrawing,
@@ -115,6 +116,7 @@ export function createLiveboardArchive(
 ): Uint8Array {
   const savedAt = options.savedAt ?? new Date().toISOString();
   const workspace = cloneJson(options.workspace);
+  normalizeBroadcastSettings(workspace);
   validateWorkspace(workspace);
   const assetEntries = new Map<string, Uint8Array>();
   const persistedLibraries: Record<string, PersistedProjectAssetLibrary> = {};
@@ -205,6 +207,7 @@ export function loadLiveboardArchive(
   const rawManifest = parseJson(manifestBytes);
   const migration = migrateManifest(rawManifest);
   const manifest = parseManifestV1(migration.manifest);
+  normalizeBroadcastSettings(manifest.workspace);
   const assetLibraries = restoreAssetLibraries(manifest, entries);
   validateWorkspace(manifest.workspace);
   validateAssetReferences(manifest.workspace, assetLibraries);
@@ -498,6 +501,12 @@ function restoreAssetLibraries(
     };
   }
   return result;
+}
+
+function normalizeBroadcastSettings(workspace: Workspace): void {
+  for (const project of workspace.projects) {
+    project.broadcastSettings = getBroadcastOverlaySettings(project);
+  }
 }
 
 function validateWorkspace(workspace: Workspace): void {
