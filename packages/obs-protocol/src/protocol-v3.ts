@@ -5,7 +5,6 @@ import {
   parseBroadcastSnapshot as parseBaseBroadcastSnapshot,
   parseObsBridgeClientMessage,
   parsePageTransition,
-  parseRasterDrawing as parseBaseRasterDrawing,
   type BroadcastLayer as BaseBroadcastLayer,
   type BroadcastRasterLayer as BaseBroadcastRasterLayer,
   type BroadcastSnapshot as BaseBroadcastSnapshot,
@@ -15,13 +14,42 @@ import {
   type RasterFill as BaseRasterFill,
   type RasterStroke as BaseRasterStroke,
 } from './protocol-v2.js';
+import {
+  DEFAULT_BROADCAST_OVERLAY_SETTINGS,
+  applyBroadcastPreset,
+  isBroadcastOverlayTheme,
+  isBroadcastPreset,
+  parseBroadcastOverlaySettings,
+  sanitizeOverlayCustomCss,
+  type BroadcastOverlaySettings,
+  type BroadcastOverlayTheme,
+  type BroadcastOverlayTransition,
+  type BroadcastPerformanceMode,
+  type BroadcastPreset,
+  type OverlayCssSanitizeResult,
+} from './overlay-settings.js';
 
 export {
   BROADCAST_SNAPSHOT_SCHEMA_VERSION,
+  DEFAULT_BROADCAST_OVERLAY_SETTINGS,
+  applyBroadcastPreset,
+  isBroadcastOverlayTheme,
+  isBroadcastPreset,
+  parseBroadcastOverlaySettings,
   parseObsBridgeClientMessage,
   parsePageTransition,
+  sanitizeOverlayCustomCss,
 };
-export type { ObsBridgeClientMessage, PageTransition };
+export type {
+  BroadcastOverlaySettings,
+  BroadcastOverlayTheme,
+  BroadcastOverlayTransition,
+  BroadcastPerformanceMode,
+  BroadcastPreset,
+  ObsBridgeClientMessage,
+  OverlayCssSanitizeResult,
+  PageTransition,
+};
 export type {
   BroadcastBackground,
   BroadcastBackgroundLayer,
@@ -62,6 +90,7 @@ export type BroadcastLayer =
 export interface BroadcastSnapshot
   extends Omit<BaseBroadcastSnapshot, 'layers'> {
   layers: BroadcastLayer[];
+  overlay: BroadcastOverlaySettings;
 }
 
 export type ObsBridgeServerMessage =
@@ -117,8 +146,10 @@ export function parseBroadcastSnapshot(input: unknown): BroadcastSnapshot {
   const rawLayers = isRecord(input) && Array.isArray(input.layers)
     ? input.layers
     : [];
+  const rawOverlay = isRecord(input) ? input.overlay : undefined;
   return {
     ...snapshot,
+    overlay: parseBroadcastOverlaySettings(rawOverlay),
     layers: snapshot.layers.map((layer, index) => {
       if (layer.type !== 'raster') return layer;
       const rawDrawing = readRawRasterDrawing(rawLayers[index]);
