@@ -90,16 +90,20 @@ export function parseBroadcastAssetRegistration(
   if (!isRecord(input)) {
     throw new Error('OBS_PROTOCOL_INVALID_ASSET_REGISTRATION');
   }
-  const descriptor = parseBroadcastAssetDescriptor(input);
-  if (
-    !(input.bytes instanceof Uint8Array) ||
-    input.bytes.byteLength < 1 ||
-    input.bytes.byteLength > MAX_SINGLE_ASSET_BYTES ||
-    input.bytes.byteLength !== descriptor.byteLength
-  ) {
+  try {
+    const descriptor = parseBroadcastAssetDescriptor(input);
+    if (
+      !(input.bytes instanceof Uint8Array) ||
+      input.bytes.byteLength < 1 ||
+      input.bytes.byteLength > MAX_SINGLE_ASSET_BYTES ||
+      input.bytes.byteLength !== descriptor.byteLength
+    ) {
+      throw new Error('OBS_PROTOCOL_INVALID_ASSET_REGISTRATION');
+    }
+    return { ...descriptor, bytes: new Uint8Array(input.bytes) };
+  } catch {
     throw new Error('OBS_PROTOCOL_INVALID_ASSET_REGISTRATION');
   }
-  return { ...descriptor, bytes: new Uint8Array(input.bytes) };
 }
 
 export function toBroadcastSnapshotDescriptor(
