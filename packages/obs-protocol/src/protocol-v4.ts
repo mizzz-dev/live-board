@@ -227,8 +227,16 @@ export function createBroadcastLayerPatch(
   const removedLayerIds = previous.layers
     .filter((layer) => !nextIds.has(layer.id))
     .map((layer) => layer.id);
+  const previousLayerOrder = previous.layers.map((layer) => layer.id);
+  const nextLayerOrder = next.layers.map((layer) => layer.id);
+  const layerOrderChanged =
+    JSON.stringify(previousLayerOrder) !== JSON.stringify(nextLayerOrder);
 
-  if (upsertedLayers.length === 0 && removedLayerIds.length === 0) {
+  if (
+    upsertedLayers.length === 0 &&
+    removedLayerIds.length === 0 &&
+    !layerOrderChanged
+  ) {
     return null;
   }
 
@@ -240,7 +248,7 @@ export function createBroadcastLayerPatch(
     generatedAt: next.generatedAt,
     upsertedLayers,
     removedLayerIds,
-    layerOrder: next.layers.map((layer) => layer.id),
+    layerOrder: nextLayerOrder,
     ...(next.assets === undefined ? {} : { assets: next.assets }),
   };
 }

@@ -105,6 +105,20 @@ describe('BroadcastLayerPatch', () => {
     expect(applyBroadcastLayerPatch(previous, patch)).toEqual(next);
   });
 
+  it('Layer順序だけの変更もpatchとして適用する', () => {
+    const a = textLayer('a', 'A');
+    const b = textLayer('b', 'B');
+    const previous = snapshot(1, [a, b]);
+    const next = snapshot(2, [b, a]);
+    const patch = createBroadcastLayerPatch(previous, next);
+
+    expect(patch).not.toBeNull();
+    expect(patch?.upsertedLayers).toEqual([]);
+    expect(patch?.removedLayerIds).toEqual([]);
+    expect(patch?.layerOrder).toEqual(['b', 'a']);
+    expect(applyBroadcastLayerPatch(previous, patch!)).toEqual(next);
+  });
+
   it('Folder親子関係変更を完成Snapshotとして再検証する', () => {
     const child = textLayer('child', 'Child');
     const folder: BroadcastLayer = {
