@@ -164,14 +164,15 @@ export function App() {
           incomingSnapshot = message.snapshot;
         }
 
-        if (
+        const hasRevisionGap =
           currentRevision !== null &&
-          incomingSnapshot.revision > currentRevision + 1 &&
-          message.type === 'layer.patch'
-        ) {
+          incomingSnapshot.revision > currentRevision + 1;
+        if (hasRevisionGap) {
           setRevisionGapCount((count) => count + 1);
-          requestLatestSnapshot(currentRevision);
-          return;
+          if (message.type === 'layer.patch') {
+            requestLatestSnapshot(currentRevision);
+            return;
+          }
         }
         if (
           currentRevision !== null &&
