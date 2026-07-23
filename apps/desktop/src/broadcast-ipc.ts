@@ -2,6 +2,7 @@ import {
   isInlineBroadcastAsset,
   parseBroadcastSnapshot,
   toBroadcastSnapshotDescriptor,
+  type BroadcastAsset,
   type BroadcastAssetRegistration,
   type BroadcastSnapshot,
   type BroadcastSnapshotDescriptor,
@@ -86,13 +87,7 @@ export async function publishBroadcastSnapshotWithAssets(
   }
 }
 
-function createRegistration(
-  asset: ReturnType<typeof parseBroadcastSnapshot>['assets'] extends
-    | Array<infer T>
-    | undefined
-    ? T
-    : never,
-): BroadcastAssetRegistration {
+function createRegistration(asset: BroadcastAsset): BroadcastAssetRegistration {
   if (!isInlineBroadcastAsset(asset)) {
     throw new Error('BROADCAST_IPC_ASSET_SOURCE_UNAVAILABLE');
   }
