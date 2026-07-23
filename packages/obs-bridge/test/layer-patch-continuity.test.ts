@@ -77,31 +77,8 @@ function snapshot(
   };
 }
 
-async function openBridgeSocket(bridge: ObsBridge): Promise<WebSocket> {
-  const origin = new URL(bridge.info.overlayUrl).origin;
-  const socket = new WebSocket(bridge.info.webSocketUrl, { origin });
-  await once(socket, 'open');
-  return socket;
-}
-
 describe('OBS Bridge layer.patch continuity', () => {
-  it('連続更新をbase revision 1→2→3のpatchとして配信する', async () => {
-    const revision1 = snapshot(1, -1, '');
-    const revision2 = snapshot(2, 10, 'Revision 2');
-    const revision3 = snapshot(3, 20, 'Revision 3');
-    activeBridge = await startObsBridge({ initialSnapshot: revision1 });
-
-    const initialPromise = once(
-      await openBridgeSocket(activeBridge),
-      'message',
-    );
-    const socket = initialPromise.length === 0
-      ? await openBridgeSocket(activeBridge)
-      : undefined;
-    void socket;
-  });
-
-  it('古いrevisionからsnapshot.requestすると最新フルSnapshotへ復旧する', async () => {
+  it('初回fullからpatch 1→2→3を配信し、古いrevision要求を最新fullへ復旧する', async () => {
     const revision1 = snapshot(1, -1, '');
     const revision2 = snapshot(2, 10, 'Revision 2');
     const revision3 = snapshot(3, 20, 'Revision 3');
@@ -110,7 +87,11 @@ describe('OBS Bridge layer.patch continuity', () => {
     const socket = new WebSocket(activeBridge.info.webSocketUrl, { origin });
     const initialPromise = once(socket, 'message');
     await once(socket, 'open');
-    await initialPromise;
+    const [initialRaw] = await initialPromise;
+    expect(JSON.parse(initialRaw.toString())).toMatchObject({
+      type: 'snapshot',
+      snapshot: { revision: 1 },
+    });
 
     const patch2Promise = once(socket, 'message');
     activeBridge.publishSnapshot(revision2);
