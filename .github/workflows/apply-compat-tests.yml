@@ -1,0 +1,32 @@
+name: Apply Compatibility Test Patch
+
+on:
+  push:
+    branches:
+      - feat/ivr-245-stream-controls-themes-performance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-245-stream-controls-themes-performance
+          fetch-depth: 0
+      - name: Apply compatibility patch
+        run: node .github/scripts/patch-compat-tests.mjs
+      - name: Remove temporary patch files
+        run: rm .github/scripts/patch-compat-tests.mjs .github/workflows/apply-compat-tests.yml
+      - name: Commit compatibility fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/persistence/src/archive.ts packages/domain/test/broadcast.test.ts .github/scripts/patch-compat-tests.mjs .github/workflows/apply-compat-tests.yml
+          git commit -m "旧Workspace互換とBroadcastSnapshot期待値を調整"
+          git push origin HEAD:feat/ivr-245-stream-controls-themes-performance
