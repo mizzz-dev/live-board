@@ -1,0 +1,30 @@
+name: Apply OBS Layer Patch
+
+on:
+  push:
+    branches:
+      - feat/obs-layer-patch
+    paths:
+      - .github/apply-obs-layer-patch.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/obs-layer-patch
+          fetch-depth: 0
+      - name: Apply implementation
+        run: python3 scripts/apply_obs_layer_patch.py
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "OBSのLayer更新を差分転送へ変更"
+          git push origin HEAD:feat/obs-layer-patch
