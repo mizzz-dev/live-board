@@ -1,0 +1,32 @@
+name: Remove Unused Broadcast Page Prop
+
+on:
+  push:
+    branches:
+      - feat/ivr-245-stream-controls-themes-performance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-245-stream-controls-themes-performance
+          fetch-depth: 0
+      - name: Remove unused prop
+        run: node .github/scripts/remove-unused-broadcast-page-prop.mjs
+      - name: Remove temporary files
+        run: rm .github/scripts/remove-unused-broadcast-page-prop.mjs .github/workflows/remove-unused-broadcast-page-prop.yml
+      - name: Commit lint fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src/AppV2.tsx .github/scripts/remove-unused-broadcast-page-prop.mjs .github/workflows/remove-unused-broadcast-page-prop.yml
+          git commit -m "PagePanelの未使用配信ページ引数を削除"
+          git push origin HEAD:feat/ivr-245-stream-controls-themes-performance
