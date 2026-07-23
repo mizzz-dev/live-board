@@ -173,18 +173,24 @@ export function parseRegisterBroadcastAssetsRequest(
     throw new Error('IPC_INVALID_BROADCAST_ASSETS');
   }
   const requestId = parseRequestId(input.requestId);
+  let inputBytes = 0;
+  for (const inputAsset of input.assets) {
+    if (!isRecord(inputAsset) || !(inputAsset.bytes instanceof Uint8Array)) {
+      throw new Error('IPC_INVALID_BROADCAST_ASSETS');
+    }
+    inputBytes += inputAsset.bytes.byteLength;
+    if (inputBytes > 256 * 1024 * 1024) {
+      throw new Error('IPC_BROADCAST_ASSET_TOTAL_LIMIT');
+    }
+  }
+
   const assets = input.assets.map(parseBroadcastAssetRegistration);
   const hashes = new Set<string>();
-  let totalBytes = 0;
   for (const asset of assets) {
     if (hashes.has(asset.sha256)) {
       throw new Error('IPC_DUPLICATE_BROADCAST_ASSET');
     }
     hashes.add(asset.sha256);
-    totalBytes += asset.byteLength;
-  }
-  if (totalBytes > 256 * 1024 * 1024) {
-    throw new Error('IPC_BROADCAST_ASSET_TOTAL_LIMIT');
   }
   return { requestId, assets };
 }

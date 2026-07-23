@@ -243,7 +243,8 @@ export function AppV2() {
       requestId,
       snapshot,
       registeredBroadcastAssetHashesRef.current,
-    ).then((response) => {
+    )
+      .then((response) => {
         if (active && response.requestId === requestId) {
           setBroadcastRevision(response.acceptedRevision);
           setBroadcastSyncError(false);
