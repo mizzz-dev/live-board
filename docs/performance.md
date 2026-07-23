@@ -19,23 +19,40 @@
 
 予算超過時は計測値と対象を警告へ記録し、再現条件を固定してから最適化します。
 
-## 3. CIで実施する試験
+## 3. CI実測結果
 
-### 3.1 100ページ
+GitHub ActionsのUbuntu runner、Node.js 22、Vitest 4.1.10で取得した値です。ブラウザ描画・Windows Electron・OBS Browser Sourceの実測値ではありません。
+
+| 試験 | 実測 | 判定 |
+|---|---:|---|
+| 100ページの次ページ切り替え判定 | 0.716ms | 100ms予算内 |
+| 100Layerの配信DTO投影 | 1.599ms | 100ms予算内 |
+| 配信対象Layer | 50 / 100 | 非表示50Layerを除外 |
+| 4K画像4枚の理論RGBAメモリ | 126.56MiB | 同時キャッシュ数の制御が必要 |
+| 28,800回の8時間相当切り替え | 201.866ms | 全28,800回成功 |
+| 8時間相当revision欠番 | 0件 | 成功 |
+| シミュレーション保持Workspace | 1件 | 旧状態を保持しない |
+| 最大シリアライズWorkspace | 2,432byte | 試験fixture内で安定 |
+
+Domainは13ファイル・57テスト、OBS Bridgeは2ファイル・14テストが成功しました。計測値はrunner負荷で変動するため、個々の値そのものではなく性能予算を継続的に超えないことを品質ゲートにします。
+
+## 4. CIで実施する試験
+
+### 4.1 100ページ
 
 - 100ページを保持するProjectを生成
 - 次・前・番号指定の配信ページ切り替えを実行
 - UIでは100ページを実際に追加して一覧操作を確認
 - `IntersectionObserver`により画面外サムネイルを生成しないことを確認
 
-### 3.2 100Layer
+### 4.2 100Layer
 
 - 100Layerを生成
 - 半数を非表示に設定
 - 配信DTOへ非表示Layerが含まれないことを確認
 - 投影時間を性能予算と比較
 
-### 3.3 4K画像
+### 4.3 4K画像
 
 RGBA展開後の理論メモリ量を次式で算出します。
 
@@ -45,7 +62,7 @@ width × height × 4 byte × image count
 
 3840×2160画像を4枚同時にデコードした場合は132,710,400 byte、約126.56MiBです。これは圧縮ファイル容量とは別に必要となるため、画像枚数、Canvasキャッシュ、サムネイル生成を同時に増やさないことを前提とします。
 
-### 3.4 8時間相当
+### 4.4 8時間相当
 
 実時間8時間をCIで待機する代わりに、1秒ごとの配信切り替えを想定した28,800回の操作を高速実行します。
 
@@ -59,7 +76,7 @@ width × height × 4 byte × image count
 
 これは状態遷移の長時間相当試験であり、Electron・OBS・GPU・OSを8時間稼働させる実機試験の代替ではありません。
 
-## 4. 現在の最適化
+## 5. 現在の最適化
 
 - 非表示Layerと非表示フォルダー配下をBroadcastSnapshotへ含めない
 - Overlayで表示対象Layerだけを描画
@@ -69,11 +86,11 @@ width × height × 4 byte × image count
 - サムネイル生成後に元サイズCanvasとRendererキャッシュを解放
 - OBS優先プリセットではページ遷移と装飾効果を無効化
 
-## 5. Worker / OffscreenCanvas / WebGL判断
+## 6. Worker / OffscreenCanvas / WebGL判断
 
 ### 推奨判断
 
-現時点ではCanvas 2Dを維持します。Layerキャッシュには既にOffscreenCanvasを利用できるため、全面的なWorker移行やWebGL化は行いません。
+現時点ではCanvas 2Dを維持します。Layerキャッシュには既にOffscreenCanvasを利用でき、状態遷移と配信DTO投影は性能予算を大きく下回ったため、全面的なWorker移行やWebGL化は行いません。
 
 ### Worker導入基準
 
@@ -90,7 +107,7 @@ width × height × 4 byte × image count
 - 対象ブラウザ・OBS Browser Sourceで安定利用できることを確認できる
 - Worker転送コストを含めても現行Canvas 2Dより改善する
 
-## 6. 実機で残る確認
+## 7. 実機で残る確認
 
 - Windows ElectronとOBS Browser Sourceを接続した8時間連続試験
 - 複数4K実画像のデコード・切り替え・保存同時実行
