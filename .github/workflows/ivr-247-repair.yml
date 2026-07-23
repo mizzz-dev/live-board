@@ -1,0 +1,34 @@
+name: IVR-247 Repair OBS Bridge Test
+
+on:
+  push:
+    branches:
+      - feat/asset-http-delivery
+    paths:
+      - .github/ivr-247-repair.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/asset-http-delivery
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Repair test file
+        run: node scripts/repair-obs-bridge-test.mjs
+      - name: Commit repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "OBS BridgeのHTTP Assetテスト破損を修復"
+          git push origin HEAD:feat/asset-http-delivery
