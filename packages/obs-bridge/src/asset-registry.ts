@@ -13,6 +13,8 @@ export const DEFAULT_MAX_ASSET_BYTES = 256 * 1024 * 1024;
 export interface StoredBroadcastAsset {
   sha256: string;
   mime: BroadcastAssetMime;
+  width: number;
+  height: number;
   byteLength: number;
   bytes: Buffer;
   sanitized: boolean;
@@ -75,6 +77,10 @@ export class BroadcastAssetRegistry {
       throw new Error('OBS_BRIDGE_ASSET_REGISTRY_LIMIT');
     }
 
+    for (const item of prepared) {
+      this.assertCompatibleMetadata(item.asset);
+    }
+
     const currentHashes = new Set<string>();
     for (const item of prepared) {
       currentHashes.add(item.asset.sha256);
@@ -119,22 +125,31 @@ export class BroadcastAssetRegistry {
     this.totalBytes = 0;
   }
 
+  private assertCompatibleMetadata(asset: InlineBroadcastAsset): void {
+    const existing = this.entries.get(asset.sha256);
+    if (
+      existing !== undefined &&
+      (existing.mime !== asset.mime ||
+        existing.width !== asset.width ||
+        existing.height !== asset.height ||
+        existing.byteLength !== asset.byteLength ||
+        existing.sanitized !== asset.sanitized)
+    ) {
+      throw new Error('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
+    }
+  }
+
   private upsert(asset: InlineBroadcastAsset, bytes: Buffer, now: number): void {
     const existing = this.entries.get(asset.sha256);
     if (existing !== undefined) {
-      if (
-        existing.mime !== asset.mime ||
-        existing.byteLength !== asset.byteLength ||
-        existing.sanitized !== asset.sanitized
-      ) {
-        throw new Error('OBS_BRIDGE_ASSET_HASH_METADATA_MISMATCH');
-      }
       existing.lastReferencedAt = now;
       return;
     }
     this.entries.set(asset.sha256, {
       sha256: asset.sha256,
       mime: asset.mime,
+      width: asset.width,
+      height: asset.height,
       byteLength: asset.byteLength,
       bytes,
       sanitized: asset.sanitized,
