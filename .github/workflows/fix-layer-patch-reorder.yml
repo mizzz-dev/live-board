@@ -1,0 +1,30 @@
+name: Fix Layer Patch Reorder
+
+on:
+  push:
+    branches:
+      - feat/obs-layer-patch
+    paths:
+      - .github/fix-layer-patch-reorder.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/obs-layer-patch
+          fetch-depth: 0
+      - name: Apply fix
+        run: python3 scripts/fix_layer_patch_reorder.py
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Layer並び替えを差分転送へ対応"
+          git push origin HEAD:feat/obs-layer-patch
