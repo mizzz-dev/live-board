@@ -1,0 +1,32 @@
+name: Update IVR-245 README
+
+on:
+  push:
+    branches:
+      - feat/ivr-245-stream-controls-themes-performance
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-245-stream-controls-themes-performance
+          fetch-depth: 0
+      - name: Update README
+        run: node .github/scripts/update-ivr-245-readme.mjs
+      - name: Remove temporary and diagnostic files
+        run: rm .github/scripts/update-ivr-245-readme.mjs .github/workflows/update-ivr-245-readme.yml .github/workflows/ivr-245-performance-diagnostics.yml
+      - name: Commit documentation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md .github/scripts/update-ivr-245-readme.mjs .github/workflows/update-ivr-245-readme.yml .github/workflows/ivr-245-performance-diagnostics.yml
+          git commit -m "READMEへ配信操作・テーマ・性能試験を反映"
+          git push origin HEAD:feat/ivr-245-stream-controls-themes-performance
