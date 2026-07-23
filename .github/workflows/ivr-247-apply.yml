@@ -1,0 +1,34 @@
+name: IVR-247 Apply Asset HTTP Delivery
+
+on:
+  push:
+    branches:
+      - feat/asset-http-delivery
+    paths:
+      - .github/ivr-247-apply.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/asset-http-delivery
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply implementation
+        run: node scripts/ivr-247-apply.mjs
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "画像Assetの認証付きHTTP分離配信を実装"
+          git push origin HEAD:feat/asset-http-delivery
