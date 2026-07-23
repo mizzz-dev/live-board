@@ -740,7 +740,6 @@ export function AppV2() {
           state={commandState}
           project={project}
           editPage={editPage}
-          broadcastPage={broadcastPage}
           editPageIndex={editPageIndex}
           addPage={addPage}
           duplicateEditPage={duplicateEditPage}
@@ -789,7 +788,6 @@ interface PagePanelProps {
   state: CanvasWorkspaceCommandState;
   project: CanvasWorkspaceCommandState['workspace']['projects'][number];
   editPage: Page;
-  broadcastPage: Page;
   editPageIndex: number;
   addPage(): void;
   duplicateEditPage(): void;
@@ -803,7 +801,6 @@ function PagePanel({
   state,
   project,
   editPage,
-  broadcastPage,
   editPageIndex,
   addPage,
   duplicateEditPage,
