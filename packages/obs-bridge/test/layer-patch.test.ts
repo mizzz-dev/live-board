@@ -106,7 +106,7 @@ describe('OBS Bridge layer.patch', () => {
     );
   });
 
-  it('Canvas・Overlay設定変更と小さすぎる差分はfull Snapshotへfallbackする', () => {
+  it('Canvas・Overlay設定変更とpatchがfull以上の場合はfull Snapshotへfallbackする', () => {
     const previous = snapshot(1, [textLayer('a', 'A')]);
     const changedLayer = textLayer('a', 'A2');
     expect(createSnapshotMessage(previous, snapshot(2, [changedLayer], {
@@ -115,7 +115,18 @@ describe('OBS Bridge layer.patch', () => {
     expect(createSnapshotMessage(previous, snapshot(2, [changedLayer], {
       overlay: { ...previous.overlay, theme: 'blackboard' },
     }), { type: 'fade', durationMs: 150 }).type).toBe('snapshot');
-    expect(createSnapshotMessage(previous, snapshot(2, [changedLayer]), {
+
+    const allChangedPrevious = snapshot(
+      1,
+      Array.from({ length: 100 }, (_, index) => textLayer(`layer-${index}`, `Before ${index}`)),
+    );
+    const allChangedNext = snapshot(
+      2,
+      allChangedPrevious.layers.map((layer, index) =>
+        textLayer(layer.id, `After ${index}`),
+      ),
+    );
+    expect(createSnapshotMessage(allChangedPrevious, allChangedNext, {
       type: 'fade',
       durationMs: 150,
     }).type).toBe('snapshot');
