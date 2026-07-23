@@ -1,7 +1,9 @@
 import {
   BROADCAST_SNAPSHOT_SCHEMA_VERSION,
+  parseBroadcastOverlaySettings,
   type BroadcastAsset,
   type BroadcastLayer,
+  type BroadcastOverlaySettings,
   type BroadcastSnapshot,
 } from '@live-board/obs-protocol';
 import {
@@ -30,6 +32,7 @@ import {
   listReferencedProjectAssets,
   type ProjectAssetLibrary,
 } from './assets.js';
+import { getBroadcastOverlaySettings } from './broadcast-controls.js';
 
 export function createBroadcastSnapshot(
   workspace: Workspace,
@@ -43,7 +46,14 @@ export function createBroadcastSnapshot(
   }
   const project = findProject(workspace, projectId);
   const page = findPage(project, project.activeBroadcastPageId);
-  return createPageRenderSnapshot(page, project.id, revision, generatedAt, assetLibrary);
+  return createPageRenderSnapshot(
+    page,
+    project.id,
+    revision,
+    generatedAt,
+    assetLibrary,
+    getBroadcastOverlaySettings(project),
+  );
 }
 
 export function createPageRenderSnapshot(
@@ -52,6 +62,7 @@ export function createPageRenderSnapshot(
   revision = 0,
   generatedAt = new Date().toISOString(),
   assetLibrary?: ProjectAssetLibrary,
+  overlaySettings?: BroadcastOverlaySettings,
 ): BroadcastSnapshot {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     throw new Error(`Invalid render revision: ${revision}`);
@@ -76,6 +87,7 @@ export function createPageRenderSnapshot(
         ? { type: 'transparent' }
         : { type: 'color', value: '#FFFFFF' },
     },
+    overlay: parseBroadcastOverlaySettings(overlaySettings),
     layers,
     ...(assets === undefined ? {} : { assets }),
   };
