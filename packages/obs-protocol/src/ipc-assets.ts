@@ -57,15 +57,15 @@ export function parseBroadcastSnapshotDescriptor(
     throw new Error('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
   }
 
-  let descriptors: BroadcastAssetDescriptor[] | undefined;
-  if (input.assets !== undefined) {
-    if (!Array.isArray(input.assets)) {
-      throw new Error('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
-    }
-    descriptors = input.assets.map(parseBroadcastAssetDescriptor);
-  }
-
   try {
+    let descriptors: BroadcastAssetDescriptor[] | undefined;
+    if (input.assets !== undefined) {
+      if (!Array.isArray(input.assets)) {
+        throw new Error('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
+      }
+      descriptors = input.assets.map(parseBroadcastAssetDescriptor);
+    }
+
     const parsed = parseBroadcastSnapshot({
       ...input,
       ...(descriptors === undefined
