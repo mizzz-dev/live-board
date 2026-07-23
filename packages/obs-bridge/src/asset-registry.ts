@@ -27,9 +27,9 @@ export interface BroadcastAssetRegistryStats {
 }
 
 export interface BroadcastAssetRegistryOptions {
-  maxBytes?: number;
-  retentionMs?: number;
-  now?: () => number;
+  maxBytes?: number | undefined;
+  retentionMs?: number | undefined;
+  now?: (() => number) | undefined;
 }
 
 export class BroadcastAssetRegistry {
