@@ -15,7 +15,7 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M3「永続化・復元」の`.liveboard`保存、自動保存、クラッシュ復元基盤まで実装しています。
+M3「保存・復旧・性能・配信操作性」の`.liveboard`永続化、配信ショートカット、Overlayテーマ、安全なカスタムCSS、性能試験基盤まで実装しています。
 
 実装済み:
 
@@ -65,9 +65,16 @@ M3「永続化・復元」の`.liveboard`保存、自動保存、クラッシュ
 - schemaVersion 0→1 migrationと未知schema拒否
 - Zip Slip・symlink・暗号化・CRC／SHA改ざん拒否
 - 最近使用、お気に入り、複製、インポート
+- Alt＋左右・番号指定による配信ページ切り替え
+- 配信ページ固定と入力欄フォーカス中のショートカット抑止
+- シンプル・イラスト・ホワイトボード・黒板・OBS優先プリセット
+- 透過・ホワイトボード・黒板Overlayテーマ
+- 外部URL・@ルール・壊れた構文を拒否するOverlay専用カスタムCSS
+- 画面内ページだけをidle時間に生成する非同期サムネイル
+- 100ページ・100Layer・4K画像・28,800回切り替えの性能試験
 - lint、型検査、Unit Test、production build、E2E
 
-画像AssetのHTTP分離配信、OBS差分転送、タイル化は後続Issueで実装します。
+画像AssetのHTTP分離配信、OBS差分転送、タイル化、実機8時間連続試験は後続工程で実施します。
 
 ## 必要環境
 
@@ -164,6 +171,18 @@ RendererからNode.js APIへ直接アクセスできない構成です。
 - 最近使用したファイルとお気に入りはMain Processが管理し、実ファイルパスはRendererへ公開しません。
 - 詳細は[永続化・自動保存・クラッシュ復元設計](docs/persistence.md)を参照してください。
 
+### 配信操作・Overlayテーマ
+
+- Alt＋← / →で前後の配信ページへ切り替えます。
+- Alt＋1〜9、Alt＋0で1〜10番目の配信ページへ直接切り替えます。
+- Alt＋Lで配信ページ固定を切り替えます。
+- 入力欄、テキストエリア、セレクト、編集可能要素へフォーカス中はショートカットを無視します。
+- 配信ページ固定中は、ショートカットと「配信ページに設定」の両方を拒否します。
+- プリセットはシンプル、イラスト、ホワイトボード、黒板、OBS優先を選択できます。
+- OBS優先プリセットはページ遷移と装飾効果を無効化します。
+- Overlay専用カスタムCSSは20,000文字までです。url()、外部scheme、@import、@font-face、styleタグ断片、壊れた括弧を拒否します。
+- 不正CSSを含む旧Snapshotを受信した場合はカスタムCSSを無効化し、選択中テーマで表示を継続します。
+
 ### OBSへの追加
 
 1. Desktop Editor上部の「OBS URLをコピー」を押す
@@ -187,8 +206,12 @@ pnpm dev:overlay
 
 - EditorとOverlayは描画時間、Layer cache hit / miss、snapshot受信遅延を計測します。
 - CIでは1920×1080・10 Raster Layerの描画時間を取得し、250ms未満を退行防止基準とします。
-- 60fpsの16.7msフレーム予算とOBS反映100ms以内は製品目標です。
-- Windows上のElectron、実際のペンタブレット、OBS Browser Sourceを組み合わせた測定は配布・実機統合工程で行います。
+- 100ページ切り替え判定0.716ms、100Layer投影1.599msをGitHub Actions上で計測しました。
+- 4K画像4枚の理論RGBAメモリは約126.56MiBです。
+- 28,800回の8時間相当切り替えはrevision欠番0件、保持Workspace 1件でした。
+- これらはUbuntu / Node.js / Vitest上の状態遷移計測で、Windows Electron・OBS・GPUの実機値ではありません。
+- 現時点ではCanvas 2Dを維持し、Worker / WebGLは性能予算の継続超過時だけ導入します。
+- 詳細は[配信性能・長時間安定性試験](docs/performance.md)を参照してください。
 
 ## 現在の制約
 
@@ -201,6 +224,9 @@ pnpm dev:overlay
 - SVGサニタイズは安全側の許可リスト方式で、一部の高度なSVG機能は除去されます。
 - `.liveboard`はMVPでは非圧縮ZIP32だけを受理し、一般ZIPツールで再圧縮したArchiveは読み込めません。
 - Archive上限は512MBで、500MB級データのWindows／電源断／ディスク不足実機試験は後続です。
+- カスタムCSSは任意CSS互換ではなく、外部通信と危険構文を拒否する制限付きサブセットです。
+- 4K画像の126.56MiBはRGBA理論値で、実画像デコード・GPUコピー・Canvasキャッシュを含む実測値ではありません。
+- 28,800回試験は8時間相当の高速状態遷移シミュレーションで、ElectronとOBSを実時間8時間稼働した試験ではありません。
 
 ## 品質確認
 
@@ -213,7 +239,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、Page操作、Layer操作、Pointer描画、画像取り込み、SVG拒否、Asset重複排除、選択変形、描画Undo / Redo、Viewport操作、性能計測、Preview状態を確認します。
+`pnpm test:e2e`はDesktop RendererとOverlayのproduction buildをVite Previewで起動し、Page操作、Layer操作、Pointer描画、画像取り込み、SVG拒否、Asset重複排除、選択変形、描画Undo / Redo、Viewport操作、配信ショートカット、配信固定、危険CSS拒否、100ページ一覧、性能計測、Preview状態を確認します。
 OBS Bridgeのtoken認証、snapshot push、`layer.updated`、再接続収束、静的ファイル配信はVitestで確認します。
 ElectronプロセスとOBS実機を組み合わせた自動試験は配布設定と合わせて後続で追加します。
 
@@ -241,6 +267,7 @@ packages/
 - [データモデル](docs/data-model.md)
 - [セキュリティ](docs/security.md)
 - [永続化・自動保存・クラッシュ復元](docs/persistence.md)
+- [配信性能・長時間安定性試験](docs/performance.md)
 - [ロードマップ](docs/roadmap.md)
 - [AIエージェント向け実装規約](AGENTS.md)
 

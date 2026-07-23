@@ -57,6 +57,15 @@ describe('BroadcastSnapshot', () => {
         dpi: 72,
         background: { type: 'transparent' },
       },
+      overlay: {
+        preset: 'simple',
+        theme: 'transparent',
+        transition: { type: 'fade', durationMs: 120 },
+        performanceMode: 'balanced',
+        customCss: '',
+        customCssEnabled: false,
+        customCssFallback: false,
+      },
       layers: [],
     });
   });

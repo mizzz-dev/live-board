@@ -32,7 +32,6 @@ import {
   createPage,
   createPageRenderSnapshot,
   createProjectAssetLibrary,
-  createSelectBroadcastPageCommand,
   createSelectEditPageCommand,
   createTransformLayerCommand,
   dispatchCanvasCommand,
@@ -69,10 +68,13 @@ import {
   type SetStateAction,
 } from 'react';
 import { AssetPanel } from './AssetPanel';
+import { BroadcastControlPanel } from './BroadcastControlPanel';
 import { CanvasSurfaceV2 } from './CanvasSurfaceV2';
 import { LayerPanel } from './LayerPanel';
+import { PageThumbnail } from './PageThumbnail';
 import { RichLayerInspector } from './RichLayerInspector';
 import { WorkspacePersistencePanel } from './WorkspacePersistencePanel';
+import { useBroadcastControls } from './useBroadcastControls';
 import { useWorkspacePersistence } from './useWorkspacePersistence';
 import './canvas-controls.css';
 import './page-controls.css';
@@ -151,6 +153,11 @@ export function AppV2() {
   const project =
     workspace.projects.find((candidate) => candidate.id === workspace.activeProjectId) ??
     workspace.projects[0]!;
+  const broadcastControls = useBroadcastControls({
+    commandState,
+    setCommandState,
+    projectId: project.id,
+  });
   const editPage =
     project.pages.find((candidate) => candidate.id === project.activeEditPageId) ??
     project.pages[0]!;
@@ -163,6 +170,7 @@ export function AppV2() {
   const canvasHistory = getCanvasHistory(commandState, editPage.id);
   const editLayerSignature = JSON.stringify(getLayerDocument(editPage));
   const broadcastLayerSignature = JSON.stringify(getLayerDocument(broadcastPage));
+  const broadcastSettingsSignature = JSON.stringify(broadcastControls.settings);
   const assetSignature = `${assetLibrary.totalBytes}:${assetLibrary.assets
     .map((asset) => `${asset.id}:${asset.sha256}`)
     .join('|')}`;
@@ -266,6 +274,7 @@ export function AppV2() {
     broadcastPage.dpi,
     broadcastPage.transparent,
     broadcastLayerSignature,
+    broadcastSettingsSignature,
     assetSignature,
   ]);
 
@@ -456,18 +465,10 @@ export function AppV2() {
           </button>
           <button
             type="button"
-            disabled={editPage.id === broadcastPage.id}
-            onClick={() =>
-              executeCommand(
-                createSelectBroadcastPageCommand(
-                  project.id,
-                  editPage.id,
-                  createCommandMetadata('page-broadcast'),
-                ),
-              )
-            }
+            disabled={broadcastControls.locked || editPage.id === broadcastPage.id}
+            onClick={() => broadcastControls.selectPage(editPage.id)}
           >
-            配信ページに設定
+            {broadcastControls.locked ? '配信ページ固定中' : '配信ページに設定'}
           </button>
         </div>
       </header>
@@ -739,13 +740,13 @@ export function AppV2() {
           state={commandState}
           project={project}
           editPage={editPage}
-          broadcastPage={broadcastPage}
           editPageIndex={editPageIndex}
           addPage={addPage}
           duplicateEditPage={duplicateEditPage}
           executeCommand={executeCommand}
           setState={setCommandState}
           clearError={() => setDomainError(null)}
+          assetLibrary={assetLibrary}
         />
 
         <LayerPanel
@@ -771,6 +772,8 @@ export function AppV2() {
           error={assetError}
         />
 
+        <BroadcastControlPanel controller={broadcastControls} />
+
         <WorkspacePersistencePanel controller={persistence} />
 
         <p className="domain-message" role="status" aria-live="polite">
@@ -785,26 +788,26 @@ interface PagePanelProps {
   state: CanvasWorkspaceCommandState;
   project: CanvasWorkspaceCommandState['workspace']['projects'][number];
   editPage: Page;
-  broadcastPage: Page;
   editPageIndex: number;
   addPage(): void;
   duplicateEditPage(): void;
   executeCommand(command: ProjectCommand): void;
   setState: Dispatch<SetStateAction<CanvasWorkspaceCommandState>>;
   clearError(): void;
+  assetLibrary: ProjectAssetLibrary;
 }
 
 function PagePanel({
   state,
   project,
   editPage,
-  broadcastPage,
   editPageIndex,
   addPage,
   duplicateEditPage,
   executeCommand,
   setState,
   clearError,
+  assetLibrary,
 }: PagePanelProps) {
   return (
     <section>
@@ -874,7 +877,11 @@ function PagePanel({
                 )
               }
             >
-              <span className="page-thumbnail" aria-hidden="true" />
+              <PageThumbnail
+                page={page}
+                projectId={project.id}
+                assetLibrary={assetLibrary}
+              />
               <span>
                 <strong>{page.name}</strong>
                 <small>
@@ -938,21 +945,6 @@ function PagePanel({
           削除
         </button>
       </div>
-      <button
-        type="button"
-        className="visually-hidden"
-        onClick={() =>
-          executeCommand(
-            createSelectBroadcastPageCommand(
-              project.id,
-              broadcastPage.id,
-              createCommandMetadata('broadcast-current'),
-            ),
-          )
-        }
-      >
-        現在の配信ページを維持
-      </button>
     </section>
   );
 }

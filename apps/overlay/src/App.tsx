@@ -1,6 +1,8 @@
 import { RichCanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
 import {
+  DEFAULT_BROADCAST_OVERLAY_SETTINGS,
   parseObsBridgeServerMessage,
+  type BroadcastOverlayTheme,
   type BroadcastSnapshot,
   type PageTransition,
 } from '@live-board/obs-protocol';
@@ -141,7 +143,7 @@ export function App() {
           );
           setTransition(
             message.type === 'page.changed'
-              ? message.transition
+              ? (incomingSnapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS).transition
               : NO_TRANSITION,
           );
           setSnapshot(incomingSnapshot);
@@ -186,12 +188,19 @@ export function App() {
     );
   }
 
-  const background =
+  const overlay = snapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS;
+  const pageBackground =
     snapshot.canvas.background.type === 'transparent'
       ? 'transparent'
       : snapshot.canvas.background.value;
+  const background = themeBackground(overlay.theme, pageBackground);
   const transitionClassName =
     transition.type === 'fade' ? ' page-transition-fade' : '';
+  const customCssState = overlay.customCssFallback
+    ? 'fallback'
+    : overlay.customCssEnabled
+      ? 'active'
+      : 'disabled';
   const outputStyle = {
     background,
     '--page-transition-duration': `${transition.durationMs}ms`,
@@ -200,11 +209,15 @@ export function App() {
   return (
     <main
       key={snapshot.pageId}
-      className={`overlay-root broadcast-output${transitionClassName}`}
+      className={`overlay-root broadcast-output theme-${overlay.theme} performance-${overlay.performanceMode}${transitionClassName}`}
       data-page-id={snapshot.pageId}
       data-revision={snapshot.revision}
       data-canvas-width={snapshot.canvas.width}
       data-canvas-height={snapshot.canvas.height}
+      data-theme={overlay.theme}
+      data-preset={overlay.preset}
+      data-performance-mode={overlay.performanceMode}
+      data-custom-css-state={customCssState}
       data-latency-ms={lastLatencyMs ?? undefined}
       data-render-duration-ms={renderMetrics?.durationMs.toFixed(2)}
       data-cache-hits={renderMetrics?.cacheHits}
@@ -212,6 +225,9 @@ export function App() {
       data-revision-gap-count={revisionGapCount}
       style={outputStyle}
     >
+      {overlay.customCssEnabled && !overlay.customCssFallback ? (
+        <style data-liveboard-custom-css>{overlay.customCss}</style>
+      ) : null}
       <canvas
         ref={canvasRef}
         className="broadcast-canvas"
@@ -223,7 +239,7 @@ export function App() {
         {snapshot.pageName} revision {snapshot.revision} /{' '}
         {connectionLabel(connectionState)} / latency {lastLatencyMs ?? 0} ms /
         render {renderMetrics?.durationMs.toFixed(1) ?? 0} ms / revision gaps{' '}
-        {revisionGapCount}
+        {revisionGapCount} / custom css {customCssState}
       </span>
     </main>
   );
@@ -234,6 +250,15 @@ export function createWebSocketUrl(location: Location): string | null {
   if (match === null) return null;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${location.host}/ws?token=${encodeURIComponent(match[1]!)}`;
+}
+
+export function themeBackground(
+  theme: BroadcastOverlayTheme,
+  pageBackground: string,
+): string {
+  if (theme === 'whiteboard') return '#F8FAFC';
+  if (theme === 'blackboard') return '#173C2C';
+  return pageBackground;
 }
 
 function connectionLabel(state: ConnectionState): string {
