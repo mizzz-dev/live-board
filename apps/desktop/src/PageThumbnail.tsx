@@ -12,14 +12,6 @@ interface PageThumbnailProps {
   assetLibrary: ProjectAssetLibrary;
 }
 
-interface IdleWindow extends Window {
-  requestIdleCallback?: (
-    callback: (deadline: { timeRemaining(): number; didTimeout: boolean }) => void,
-    options?: { timeout: number },
-  ) => number;
-  cancelIdleCallback?: (handle: number) => void;
-}
-
 export function PageThumbnail({
   page,
   projectId,
@@ -56,7 +48,6 @@ export function PageThumbnail({
   useEffect(() => {
     if (!visible) return;
     let canceled = false;
-    const idleWindow = window as IdleWindow;
     const run = () => {
       if (canceled) return;
       const source = document.createElement('canvas');
@@ -99,14 +90,14 @@ export function PageThumbnail({
 
     let idleHandle: number | undefined;
     let timeoutHandle: number | undefined;
-    if (idleWindow.requestIdleCallback !== undefined) {
-      idleHandle = idleWindow.requestIdleCallback(() => run(), { timeout: 750 });
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(() => run(), { timeout: 750 });
     } else {
       timeoutHandle = window.setTimeout(run, 0);
     }
     return () => {
       canceled = true;
-      if (idleHandle !== undefined) idleWindow.cancelIdleCallback?.(idleHandle);
+      if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
       if (timeoutHandle !== undefined) window.clearTimeout(timeoutHandle);
     };
   }, [visible, page.id, page.updatedAt, layerSignature, projectId, assetSignature]);
