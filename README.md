@@ -15,7 +15,7 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M3「保存・復旧・性能・配信操作性」の`.liveboard`永続化、配信ショートカット、Overlayテーマ、安全なカスタムCSS、性能試験基盤まで実装しています。
+M3「保存・復旧・性能・配信操作性」に加え、画像Assetの認証付きloopback HTTP分離配信まで実装しています。
 
 実装済み:
 
@@ -57,6 +57,9 @@ M3「保存・復旧・性能・配信操作性」の`.liveboard`永続化、配
 - Overlayの自動再接続と最後の正常フレーム保持
 - token付きOBS Browser Source URLの安全なコピー
 - ビルド済みOverlayのloopback静的配信
+- SHA-256と起動tokenを使う画像Assetのloopback HTTP配信
+- ETag / 304、immutable cache、同一hash重複排除、猶予付きAsset解放
+- WebSocket Snapshotから画像data URLを除外
 - 描画時間、Layer cache hit、OBS受信遅延の計測
 - manifestとAssetを分離した`.liveboard`保存・読込
 - temp / fsync / backup / renameによる原子的保存
@@ -74,7 +77,7 @@ M3「保存・復旧・性能・配信操作性」の`.liveboard`永続化、配
 - 100ページ・100Layer・4K画像・28,800回切り替えの性能試験
 - lint、型検査、Unit Test、production build、E2E
 
-画像AssetのHTTP分離配信、OBS差分転送、タイル化、実機8時間連続試験は後続工程で実施します。
+OBS差分転送、画像タイル化、実機8時間連続試験は後続工程で実施します。
 
 ## 必要環境
 
@@ -193,6 +196,18 @@ RendererからNode.js APIへ直接アクセスできない構成です。
 
 Overlay URLには起動ごとに生成される接続tokenが含まれます。URLを画面やログへ表示せず、Electron Main Processから直接クリップボードへ書き込みます。
 
+### OBS向け画像Asset配信
+
+- Editor・保存処理では従来のinline Assetを維持します。
+- OBS Bridgeは公開前にBase64、byteLength、SHA-256を再検証します。
+- Overlayへ送るSnapshotでは画像data URLを認証付き相対URLへ変換します。
+- Asset URLは`/asset/<起動token>/<sha256>`形式です。
+- HTTP endpointはloopback接続、正常token、登録済みSHA-256だけを受け付けます。
+- GET / HEAD、ETag / 304、immutable cacheに対応します。
+- 同一SHA-256はregistryへ1件だけ保持し、未参照Assetは既定60秒の猶予後に解放します。
+- registryの既定上限は256MiBです。
+- 詳細は[画像Assetのloopback HTTP配信設計](docs/asset-http-delivery.md)を参照してください。
+
 ### OBS Overlay単体
 
 ```bash
@@ -217,8 +232,10 @@ pnpm dev:overlay
 
 - Raster内容はStroke / Fill DTOを再生する初期実装で、タイル分割されたファイルバックドピクセルストレージではありません。
 - 実行中のAssetバイナリはProject単位のReactメモリ状態に保持し、保存時に`.liveboard`内のAssetファイルへ分離します。
-- OBS snapshotへ参照Assetのdata URLを含めるため、大容量画像ではsnapshotサイズが増えます。
-- 画像AssetのHTTP分離配信、差分転送、タイル化は後続の性能改善対象です。
+- Desktop RendererからElectron MainへSnapshotを渡すIPCでは、参照Assetのinline data URLを引き続き使用します。
+- OBS BridgeからOverlayへ送るWebSocket Snapshotには画像data URLを含めず、loopback HTTP Asset URLへ変換します。
+- Asset registryはメモリ上に保持し、既定256MiB・未参照60秒の上限と猶予を持ちます。
+- OBSのLayer差分転送、画像タイル化、ディスクバックドHTTP cacheは後続の性能改善対象です。
 - バケツはLayerキャッシュ生成時にCanvas全体のImageDataを処理します。
 - GIFはブラウザImageで静止フレームとして描画し、アニメーション編集・再生は対象外です。
 - SVGサニタイズは安全側の許可リスト方式で、一部の高度なSVG機能は除去されます。
@@ -267,6 +284,7 @@ packages/
 - [データモデル](docs/data-model.md)
 - [セキュリティ](docs/security.md)
 - [永続化・自動保存・クラッシュ復元](docs/persistence.md)
+- [画像Assetのloopback HTTP配信](docs/asset-http-delivery.md)
 - [配信性能・長時間安定性試験](docs/performance.md)
 - [ロードマップ](docs/roadmap.md)
 - [AIエージェント向け実装規約](AGENTS.md)
