@@ -1,0 +1,32 @@
+name: Patch Desktop Security Overlay Fixture
+
+on:
+  push:
+    branches:
+      - feat/ivr-245-stream-controls-themes-performance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ivr-245-stream-controls-themes-performance
+          fetch-depth: 0
+      - name: Patch Desktop fixture
+        run: node .github/scripts/patch-desktop-security-overlay-fixture.mjs
+      - name: Remove temporary files
+        run: rm .github/scripts/patch-desktop-security-overlay-fixture.mjs .github/workflows/patch-desktop-security-overlay-fixture.yml
+      - name: Commit fixture update
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/test/security.test.ts .github/scripts/patch-desktop-security-overlay-fixture.mjs .github/workflows/patch-desktop-security-overlay-fixture.yml
+          git commit -m "Desktop IPC fixtureへOverlay既定値を追加"
+          git push origin HEAD:feat/ivr-245-stream-controls-themes-performance
