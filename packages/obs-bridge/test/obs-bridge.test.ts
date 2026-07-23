@@ -302,12 +302,13 @@ describe('OBS bridge', () => {
     expect(await head.text()).toBe('');
 
     const pathParts = deliveredAsset.url.split('/');
-    pathParts[2] = pathParts[2].startsWith('0')
-      ? `1${pathParts[2].slice(1)}`
-      : `0${pathParts[2].slice(1)}`;
+    const validToken = pathParts[2]!;
+    pathParts[2] = validToken.startsWith('0')
+      ? `1${validToken.slice(1)}`
+      : `0${validToken.slice(1)}`;
     expect((await fetch(`${origin}${pathParts.join('/')}`)).status).toBe(401);
     expect((await fetch(
-      `${origin}/asset/${pathParts[2]}/${'0'.repeat(64)}`,
+      `${origin}/asset/${validToken}/${'0'.repeat(64)}`,
     )).status).toBe(404);
     expect(activeBridge.getAssetStats()).toMatchObject({
       count: 1,
