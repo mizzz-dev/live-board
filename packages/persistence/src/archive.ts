@@ -505,7 +505,9 @@ function restoreAssetLibraries(
 
 function normalizeBroadcastSettings(workspace: Workspace): void {
   for (const project of workspace.projects) {
-    project.broadcastSettings = getBroadcastOverlaySettings(project);
+    if (project.broadcastSettings !== undefined) {
+      project.broadcastSettings = getBroadcastOverlaySettings(project);
+    }
   }
 }
 
