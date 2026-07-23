@@ -58,6 +58,7 @@ describe('Overlay設定', () => {
     '@import "https://example.com/theme.css";',
     '.x { background: url(data:image/png;base64,aaaa); }',
     '.x { behavior: url(test.htc); }',
+    '<style>.x { color: red; }</style>',
     '.x { color: red;',
   ])('危険または壊れたCSSを拒否する: %s', (css) => {
     expect(sanitizeOverlayCustomCss(css).accepted).toBe(false);
