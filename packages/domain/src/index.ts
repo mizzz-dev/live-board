@@ -84,4 +84,5 @@ export type {
 export {
   dispatchCanvasCommandWithOperationOrder as dispatchCanvasCommand,
 } from './canvas-operation-order.js';
+export * from './broadcast-controls.js';
 export * from './broadcast.js';
