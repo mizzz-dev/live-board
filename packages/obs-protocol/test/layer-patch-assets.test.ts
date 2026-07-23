@@ -134,11 +134,11 @@ describe('BroadcastLayerPatch Asset参照', () => {
     const previous = snapshot(1, []);
     const next = snapshot(2, [imageLayer()], [httpAsset]);
     const patch = createBroadcastLayerPatch(previous, next)!;
+    const { assets: _assets, ...patchWithoutAssets } = patch;
 
-    expect(() => applyBroadcastLayerPatch(previous, {
-      ...patch,
-      assets: undefined,
-    })).toThrow('OBS_PROTOCOL_IMAGE_ASSET_NOT_FOUND');
+    expect(() => applyBroadcastLayerPatch(previous, patchWithoutAssets)).toThrow(
+      'OBS_PROTOCOL_IMAGE_ASSET_NOT_FOUND',
+    );
   });
 
   it('連続patchをbase revision順に適用して最新Snapshotへ収束する', () => {
