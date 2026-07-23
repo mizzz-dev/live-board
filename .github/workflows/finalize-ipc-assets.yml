@@ -1,0 +1,31 @@
+name: Finalize IPC Assets
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ipc-asset-registration
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Finalize implementation
+        run: node scripts/finalize-ipc-assets.mjs
+      - name: Commit final adjustments
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "IPC Asset登録の容量事前検証と可読性を改善"
+          git push origin HEAD:feat/ipc-asset-registration
