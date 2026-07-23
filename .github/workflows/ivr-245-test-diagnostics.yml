@@ -1,0 +1,40 @@
+name: IVR-245 Test Diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Capture test output
+        shell: bash
+        run: |
+          set +e
+          pnpm test > test.log 2>&1
+          echo "$?" > test-status.txt
+          exit 0
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivr-245-test-diagnostics
+          path: |
+            test.log
+            test-status.txt
+          retention-days: 1
