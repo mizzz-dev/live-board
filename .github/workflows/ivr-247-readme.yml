@@ -1,11 +1,8 @@
 name: IVR-247 Update README
 
 on:
-  push:
-    branches:
-      - feat/asset-http-delivery
-    paths:
-      - .github/ivr-247-readme.trigger
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
