@@ -15,7 +15,7 @@ Live Board は、配信者向けのローカル完結型リアルタイムペイ
 
 ## 現在の状態
 
-M2「レイヤー・描画・画像編集」の画像・文字・図形・選択変形基盤まで実装しています。
+M3「永続化・復元」の`.liveboard`保存、自動保存、クラッシュ復元基盤まで実装しています。
 
 実装済み:
 
@@ -58,9 +58,16 @@ M2「レイヤー・描画・画像編集」の画像・文字・図形・選択
 - token付きOBS Browser Source URLの安全なコピー
 - ビルド済みOverlayのloopback静的配信
 - 描画時間、Layer cache hit、OBS受信遅延の計測
+- manifestとAssetを分離した`.liveboard`保存・読込
+- temp / fsync / backup / renameによる原子的保存
+- 操作ジャーナル、2秒debounce自動保存、3世代snapshot
+- クラッシュ復元候補の検証・復元・破棄
+- schemaVersion 0→1 migrationと未知schema拒否
+- Zip Slip・symlink・暗号化・CRC／SHA改ざん拒否
+- 最近使用、お気に入り、複製、インポート
 - lint、型検査、Unit Test、production build、E2E
 
-永続化、自動保存、クラッシュ復元、画像Assetのファイル分離、差分転送は後続Issueで実装します。
+画像AssetのHTTP分離配信、OBS差分転送、タイル化は後続Issueで実装します。
 
 ## 必要環境
 
@@ -146,6 +153,17 @@ RendererからNode.js APIへ直接アクセスできない構成です。
 - OBS snapshotへは表示中Layerが参照する画像Assetだけを含めます。
 - ファイル名、別名、選択状態、編集ロック、移動ロック、ローカルパスはOBSへ送信しません。
 
+### 保存・復元
+
+- 「保存」「名前を付けて保存」でWorkspace全体を`.liveboard`へ保存します。
+- manifestにはWorkspaceとAssetメタデータを保存し、画像バイナリは`assets/<sha256>.<ext>`へ分離します。
+- Workspace変更後2秒で自動保存snapshotを生成します。
+- 明示保存済みでない正常なsnapshotは、起動後にクラッシュ復元候補として表示します。
+- 「開く」はArchiveのWorkspace IDを維持して現在状態を置き換えます。
+- 「インポート」「複製」はWorkspace / Project / Page / Layer IDを再生成し、未保存の別Workspaceとして開きます。
+- 最近使用したファイルとお気に入りはMain Processが管理し、実ファイルパスはRendererへ公開しません。
+- 詳細は[永続化・自動保存・クラッシュ復元設計](docs/persistence.md)を参照してください。
+
 ### OBSへの追加
 
 1. Desktop Editor上部の「OBS URLをコピー」を押す
@@ -175,13 +193,14 @@ pnpm dev:overlay
 ## 現在の制約
 
 - Raster内容はStroke / Fill DTOを再生する初期実装で、タイル分割されたファイルバックドピクセルストレージではありません。
-- AssetバイナリはProject単位のReactメモリ状態に保持し、永続化は未実装です。
+- 実行中のAssetバイナリはProject単位のReactメモリ状態に保持し、保存時に`.liveboard`内のAssetファイルへ分離します。
 - OBS snapshotへ参照Assetのdata URLを含めるため、大容量画像ではsnapshotサイズが増えます。
 - 画像AssetのHTTP分離配信、差分転送、タイル化は後続の性能改善対象です。
 - バケツはLayerキャッシュ生成時にCanvas全体のImageDataを処理します。
 - GIFはブラウザImageで静止フレームとして描画し、アニメーション編集・再生は対象外です。
 - SVGサニタイズは安全側の許可リスト方式で、一部の高度なSVG機能は除去されます。
-- 永続化、自動保存、クラッシュ復元は未実装です。
+- `.liveboard`はMVPでは非圧縮ZIP32だけを受理し、一般ZIPツールで再圧縮したArchiveは読み込めません。
+- Archive上限は512MBで、500MB級データのWindows／電源断／ディスク不足実機試験は後続です。
 
 ## 品質確認
 
@@ -210,6 +229,7 @@ packages/
   domain/           Workspace / Project / Page / Layer / Asset / Command履歴・snapshot投影
   obs-protocol/     Editor・Bridge・Overlay間のDTOとメッセージ検証
   obs-bridge/       loopback限定HTTP / WebSocket・Overlay静的配信
+  persistence/      `.liveboard`・ZIP検証・migration・復元ジャーナル
 ```
 
 将来追加するパッケージは、[アーキテクチャ](docs/architecture.md)の責務境界に従います。
@@ -220,6 +240,7 @@ packages/
 - [アーキテクチャ](docs/architecture.md)
 - [データモデル](docs/data-model.md)
 - [セキュリティ](docs/security.md)
+- [永続化・自動保存・クラッシュ復元](docs/persistence.md)
 - [ロードマップ](docs/roadmap.md)
 - [AIエージェント向け実装規約](AGENTS.md)
 

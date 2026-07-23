@@ -72,6 +72,8 @@ import { AssetPanel } from './AssetPanel';
 import { CanvasSurfaceV2 } from './CanvasSurfaceV2';
 import { LayerPanel } from './LayerPanel';
 import { RichLayerInspector } from './RichLayerInspector';
+import { WorkspacePersistencePanel } from './WorkspacePersistencePanel';
+import { useWorkspacePersistence } from './useWorkspacePersistence';
 import './canvas-controls.css';
 import './page-controls.css';
 
@@ -138,6 +140,12 @@ export function AppV2() {
   const [guidesVisible, setGuidesVisible] = useState(true);
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
   const nextBroadcastRevisionRef = useRef(1);
+  const persistence = useWorkspacePersistence({
+    commandState,
+    assetLibraries,
+    setCommandState,
+    setAssetLibraries,
+  });
 
   const workspace = commandState.workspace;
   const project =
@@ -762,6 +770,8 @@ export function AppV2() {
           onImport={importAssets}
           error={assetError}
         />
+
+        <WorkspacePersistencePanel controller={persistence} />
 
         <p className="domain-message" role="status" aria-live="polite">
           {domainError ?? 'Page・Layer・描画操作は別々の履歴へ記録されます'}

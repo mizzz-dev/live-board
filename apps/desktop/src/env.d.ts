@@ -35,6 +35,61 @@ interface CopyObsSourceUrlResponse {
   copied: true;
 }
 
+interface PublicDocumentRecord {
+  documentId: string;
+  displayName: string;
+  favorite: boolean;
+  lastOpenedAt: string;
+  lastSavedAt: string | null;
+}
+
+interface PublicRecoveryCandidate {
+  candidateId: string;
+  workspaceId: string;
+  revision: number;
+  savedAt: string;
+  operationCountAfterSnapshot: number;
+}
+
+interface WorkspaceSaveResponse {
+  requestId: string;
+  canceled: boolean;
+  document?: PublicDocumentRecord;
+  archiveSha256?: string;
+}
+
+interface WorkspaceOpenResponse {
+  requestId: string;
+  canceled: boolean;
+  document?: PublicDocumentRecord;
+  archive?: Uint8Array;
+}
+
+interface WorkspaceListRecentResponse {
+  requestId: string;
+  documents: PublicDocumentRecord[];
+}
+
+interface WorkspaceSetFavoriteResponse {
+  requestId: string;
+  document: PublicDocumentRecord;
+}
+
+interface WorkspaceMutationResponse {
+  requestId: string;
+  accepted: true;
+}
+
+interface RecoveryListResponse {
+  requestId: string;
+  candidates: PublicRecoveryCandidate[];
+}
+
+interface RecoveryLoadResponse {
+  requestId: string;
+  archive: Uint8Array;
+}
+
 interface Window {
   liveBoard?: {
     getRuntimeInfo: () => RuntimeInfo;
@@ -44,5 +99,49 @@ interface Window {
       snapshot: import('@live-board/obs-protocol').BroadcastSnapshot,
     ) => Promise<PublishBroadcastSnapshotResponse>;
     copyObsSourceUrl: (requestId: string) => Promise<CopyObsSourceUrlResponse>;
+    saveWorkspace: (input: {
+      requestId: string;
+      workspaceId: string;
+      revision: number;
+      archive: Uint8Array;
+      documentId?: string | undefined;
+      saveAs: boolean;
+    }) => Promise<WorkspaceSaveResponse>;
+    openWorkspace: (requestId: string) => Promise<WorkspaceOpenResponse>;
+    openRecentWorkspace: (
+      requestId: string,
+      documentId: string,
+    ) => Promise<WorkspaceOpenResponse>;
+    listRecentWorkspaces: (
+      requestId: string,
+    ) => Promise<WorkspaceListRecentResponse>;
+    setWorkspaceFavorite: (
+      requestId: string,
+      documentId: string,
+      favorite: boolean,
+    ) => Promise<WorkspaceSetFavoriteResponse>;
+    appendWorkspaceOperation: (
+      requestId: string,
+      workspaceId: string,
+      revision: number,
+    ) => Promise<WorkspaceMutationResponse>;
+    autosaveWorkspace: (
+      requestId: string,
+      workspaceId: string,
+      revision: number,
+      archive: Uint8Array,
+    ) => Promise<WorkspaceMutationResponse>;
+    listRecoveryCandidates: (
+      requestId: string,
+    ) => Promise<RecoveryListResponse>;
+    loadRecoveryCandidate: (
+      requestId: string,
+      candidateId: string,
+    ) => Promise<RecoveryLoadResponse>;
+    discardRecoveryCandidate: (
+      requestId: string,
+      candidateId: string,
+      revision: number,
+    ) => Promise<WorkspaceMutationResponse>;
   };
 }
