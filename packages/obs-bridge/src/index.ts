@@ -1,4 +1,5 @@
 import {
+  createBroadcastLayerPatch,
   parseBroadcastSnapshot,
   parseObsBridgeClientMessage,
   parsePageTransition,
@@ -123,11 +124,18 @@ export function createSnapshotMessage(
     };
   }
 
-  if (
-    previousSnapshot !== undefined &&
-    JSON.stringify(previousSnapshot.layers) !== JSON.stringify(snapshot.layers)
-  ) {
-    return { type: 'layer.updated', snapshot };
+  if (previousSnapshot !== undefined) {
+    const patch = createBroadcastLayerPatch(previousSnapshot, snapshot);
+    if (patch !== null) {
+      const patchMessage = { type: 'layer.patch', patch } as const;
+      const fullMessage = { type: 'snapshot', snapshot } as const;
+      if (
+        Buffer.byteLength(JSON.stringify(patchMessage), 'utf8') <
+        Buffer.byteLength(JSON.stringify(fullMessage), 'utf8')
+      ) {
+        return patchMessage;
+      }
+    }
   }
 
   return { type: 'snapshot', snapshot };

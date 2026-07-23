@@ -50,7 +50,7 @@ describe('createSnapshotMessage', () => {
     });
   });
 
-  it('同一ページのLayer変更をlayer.updatedとして送る', () => {
+  it('差分化の効果がないLayer変更はsnapshotへfallbackする', () => {
     const updated = {
       ...baseSnapshot,
       revision: 2,
@@ -75,7 +75,7 @@ describe('createSnapshotMessage', () => {
     } satisfies BroadcastSnapshot;
 
     expect(createSnapshotMessage(baseSnapshot, updated, transition)).toEqual({
-      type: 'layer.updated',
+      type: 'snapshot',
       snapshot: updated,
     });
   });
