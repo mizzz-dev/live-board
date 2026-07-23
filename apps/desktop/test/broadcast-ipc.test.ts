@@ -90,6 +90,37 @@ describe('broadcast IPC helper', () => {
     expect(payload.snapshot.revision).toBe(2);
   });
 
+  it('繰り返しpublish payloadを画像バイナリ容量から分離する', () => {
+    const largeBytes = Buffer.alloc(512 * 1024, 0x5a);
+    const largeSha256 = createHash('sha256').update(largeBytes).digest('hex');
+    const input = snapshot(3);
+    input.assets = [
+      {
+        ...input.assets![0]!,
+        sha256: largeSha256,
+        byteLength: largeBytes.byteLength,
+        dataUrl: `data:image/png;base64,${largeBytes.toString('base64')}`,
+      },
+    ];
+    const payload = createBroadcastIpcPayload(input, new Set([largeSha256]));
+    const inlineBytes = Buffer.byteLength(JSON.stringify(input), 'utf8');
+    const descriptorBytes = Buffer.byteLength(
+      JSON.stringify(payload.snapshot),
+      'utf8',
+    );
+
+    console.log('IPC asset payload metric', {
+      assetBytes: largeBytes.byteLength,
+      inlineBytes,
+      descriptorBytes,
+      reductionPercent: Number(
+        ((1 - descriptorBytes / inlineBytes) * 100).toFixed(2),
+      ),
+    });
+    expect(payload.registrations).toEqual([]);
+    expect(descriptorBytes).toBeLessThan(inlineBytes / 100);
+  });
+
   it('初回はAsset登録後にdescriptor Snapshotを公開する', async () => {
     const calls: string[] = [];
     const api: BroadcastIpcApi = {
