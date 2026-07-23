@@ -948,21 +948,6 @@ function PagePanel({
           削除
         </button>
       </div>
-      <button
-        type="button"
-        className="visually-hidden"
-        onClick={() =>
-          executeCommand(
-            createSelectBroadcastPageCommand(
-              project.id,
-              broadcastPage.id,
-              createCommandMetadata('broadcast-current'),
-            ),
-          )
-        }
-      >
-        現在の配信ページを維持
-      </button>
     </section>
   );
 }
