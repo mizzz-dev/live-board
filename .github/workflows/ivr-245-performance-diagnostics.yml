@@ -37,6 +37,20 @@ jobs:
           pnpm --filter @live-board/obs-bridge test > bridge.log 2>&1
           echo "$?" > bridge-status.txt
           exit 0
+      - name: Capture Persistence output
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @live-board/persistence test > persistence.log 2>&1
+          echo "$?" > persistence-status.txt
+          exit 0
+      - name: Capture Desktop output
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @live-board/desktop test > desktop.log 2>&1
+          echo "$?" > desktop-status.txt
+          exit 0
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
         with:
@@ -46,4 +60,8 @@ jobs:
             domain-status.txt
             bridge.log
             bridge-status.txt
+            persistence.log
+            persistence-status.txt
+            desktop.log
+            desktop-status.txt
           retention-days: 1
