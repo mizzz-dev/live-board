@@ -1,4 +1,4 @@
-name: IVR-247 Type Diagnostics
+name: IVR-247 Test Diagnostics
 
 on:
   pull_request:
@@ -23,18 +23,18 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-      - name: Capture typecheck output
+      - name: Capture test output
         shell: bash
         run: |
           set +e
-          pnpm typecheck > typecheck.log 2>&1
-          echo "$?" > typecheck-status.txt
+          pnpm test > test.log 2>&1
+          echo "$?" > test-status.txt
           exit 0
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: ivr-247-type-diagnostics
+          name: ivr-247-test-diagnostics
           path: |
-            typecheck.log
-            typecheck-status.txt
+            test.log
+            test-status.txt
           retention-days: 1
