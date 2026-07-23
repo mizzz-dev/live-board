@@ -1,5 +1,6 @@
 import { RichCanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
 import {
+  DEFAULT_BROADCAST_OVERLAY_SETTINGS,
   parseObsBridgeServerMessage,
   type BroadcastOverlayTheme,
   type BroadcastSnapshot,
@@ -142,7 +143,7 @@ export function App() {
           );
           setTransition(
             message.type === 'page.changed'
-              ? incomingSnapshot.overlay.transition
+              ? (incomingSnapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS).transition
               : NO_TRANSITION,
           );
           setSnapshot(incomingSnapshot);
@@ -187,16 +188,17 @@ export function App() {
     );
   }
 
+  const overlay = snapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS;
   const pageBackground =
     snapshot.canvas.background.type === 'transparent'
       ? 'transparent'
       : snapshot.canvas.background.value;
-  const background = themeBackground(snapshot.overlay.theme, pageBackground);
+  const background = themeBackground(overlay.theme, pageBackground);
   const transitionClassName =
     transition.type === 'fade' ? ' page-transition-fade' : '';
-  const customCssState = snapshot.overlay.customCssFallback
+  const customCssState = overlay.customCssFallback
     ? 'fallback'
-    : snapshot.overlay.customCssEnabled
+    : overlay.customCssEnabled
       ? 'active'
       : 'disabled';
   const outputStyle = {
@@ -207,14 +209,14 @@ export function App() {
   return (
     <main
       key={snapshot.pageId}
-      className={`overlay-root broadcast-output theme-${snapshot.overlay.theme} performance-${snapshot.overlay.performanceMode}${transitionClassName}`}
+      className={`overlay-root broadcast-output theme-${overlay.theme} performance-${overlay.performanceMode}${transitionClassName}`}
       data-page-id={snapshot.pageId}
       data-revision={snapshot.revision}
       data-canvas-width={snapshot.canvas.width}
       data-canvas-height={snapshot.canvas.height}
-      data-theme={snapshot.overlay.theme}
-      data-preset={snapshot.overlay.preset}
-      data-performance-mode={snapshot.overlay.performanceMode}
+      data-theme={overlay.theme}
+      data-preset={overlay.preset}
+      data-performance-mode={overlay.performanceMode}
       data-custom-css-state={customCssState}
       data-latency-ms={lastLatencyMs ?? undefined}
       data-render-duration-ms={renderMetrics?.durationMs.toFixed(2)}
@@ -223,8 +225,8 @@ export function App() {
       data-revision-gap-count={revisionGapCount}
       style={outputStyle}
     >
-      {snapshot.overlay.customCssEnabled && !snapshot.overlay.customCssFallback ? (
-        <style data-liveboard-custom-css>{snapshot.overlay.customCss}</style>
+      {overlay.customCssEnabled && !overlay.customCssFallback ? (
+        <style data-liveboard-custom-css>{overlay.customCss}</style>
       ) : null}
       <canvas
         ref={canvasRef}
