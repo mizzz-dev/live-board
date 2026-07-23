@@ -144,7 +144,10 @@ export class BroadcastAssetRegistry {
     this.activeHashes = currentHashes;
     this.pruneExpired(currentHashes, now);
 
-    if (snapshot.assets === undefined) return snapshot;
+    if (snapshot.assets === undefined) {
+      const { assets: _assets, ...snapshotWithoutAssets } = snapshot;
+      return snapshotWithoutAssets;
+    }
     const assets: HttpBroadcastAsset[] = descriptors.map((asset) => ({
       ...asset,
       delivery: 'http',
