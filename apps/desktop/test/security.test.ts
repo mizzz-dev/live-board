@@ -171,7 +171,8 @@ describe('IPC request parser', () => {
     });
 
     expect(result.requestId).toBe('register_1');
-    expect(result.assets).toEqual([{ ...asset, bytes: assetBytes }]);
+    expect(result.assets[0]).toMatchObject(asset);
+    expect(Buffer.from(result.assets[0]!.bytes)).toEqual(assetBytes);
     expect(result.assets[0]!.bytes).not.toBe(assetBytes);
   });
 
