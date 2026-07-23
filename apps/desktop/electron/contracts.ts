@@ -1,9 +1,12 @@
 import {
-  parseBroadcastSnapshot,
-  type BroadcastSnapshot,
+  parseBroadcastAssetRegistration,
+  parseBroadcastSnapshotDescriptor,
+  type BroadcastAssetRegistration,
+  type BroadcastSnapshotDescriptor,
 } from '@live-board/obs-protocol';
 
 export const SECURITY_STATUS_CHANNEL = 'security:get-status';
+export const BROADCAST_REGISTER_ASSETS_CHANNEL = 'broadcast:register-assets';
 export const BROADCAST_PUBLISH_CHANNEL = 'broadcast:publish-snapshot';
 export const OBS_COPY_SOURCE_URL_CHANNEL = 'obs:copy-source-url';
 export const WORKSPACE_SAVE_CHANNEL = 'workspace:save';
@@ -40,9 +43,19 @@ export interface SecurityStatus {
   };
 }
 
+export interface RegisterBroadcastAssetsRequest {
+  requestId: string;
+  assets: BroadcastAssetRegistration[];
+}
+
+export interface RegisterBroadcastAssetsResponse {
+  requestId: string;
+  registeredSha256: string[];
+}
+
 export interface PublishBroadcastSnapshotRequest {
   requestId: string;
-  snapshot: BroadcastSnapshot;
+  snapshot: BroadcastSnapshotDescriptor;
 }
 
 export interface PublishBroadcastSnapshotResponse {
@@ -153,6 +166,29 @@ export function parseSecurityStatusRequest(
   return { requestId: parseRequestId(input.requestId) };
 }
 
+export function parseRegisterBroadcastAssetsRequest(
+  input: unknown,
+): RegisterBroadcastAssetsRequest {
+  if (!isRecord(input) || !Array.isArray(input.assets) || input.assets.length > 256) {
+    throw new Error('IPC_INVALID_BROADCAST_ASSETS');
+  }
+  const requestId = parseRequestId(input.requestId);
+  const assets = input.assets.map(parseBroadcastAssetRegistration);
+  const hashes = new Set<string>();
+  let totalBytes = 0;
+  for (const asset of assets) {
+    if (hashes.has(asset.sha256)) {
+      throw new Error('IPC_DUPLICATE_BROADCAST_ASSET');
+    }
+    hashes.add(asset.sha256);
+    totalBytes += asset.byteLength;
+  }
+  if (totalBytes > 256 * 1024 * 1024) {
+    throw new Error('IPC_BROADCAST_ASSET_TOTAL_LIMIT');
+  }
+  return { requestId, assets };
+}
+
 export function parsePublishBroadcastSnapshotRequest(
   input: unknown,
 ): PublishBroadcastSnapshotRequest {
@@ -161,7 +197,7 @@ export function parsePublishBroadcastSnapshotRequest(
   }
   return {
     requestId: parseRequestId(input.requestId),
-    snapshot: parseBroadcastSnapshot(input.snapshot),
+    snapshot: parseBroadcastSnapshotDescriptor(input.snapshot),
   };
 }
 

@@ -11,12 +11,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   BROADCAST_PUBLISH_CHANNEL,
+  BROADCAST_REGISTER_ASSETS_CHANNEL,
   OBS_COPY_SOURCE_URL_CHANNEL,
   parsePublishBroadcastSnapshotRequest,
+  parseRegisterBroadcastAssetsRequest,
   parseSecurityStatusRequest,
   SECURITY_STATUS_CHANNEL,
   type CopyObsSourceUrlResponse,
   type PublishBroadcastSnapshotResponse,
+  type RegisterBroadcastAssetsResponse,
   type SecurityStatus,
 } from './contracts.js';
 import {
@@ -118,6 +121,7 @@ function registerIpcHandlers(
   bridge: ObsBridge,
 ): void {
   ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
+  ipcMain.removeHandler(BROADCAST_REGISTER_ASSETS_CHANNEL);
   ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
   ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
 
@@ -144,12 +148,22 @@ function registerIpcHandlers(
     return response;
   });
 
+  ipcMain.handle(BROADCAST_REGISTER_ASSETS_CHANNEL, (event, input: unknown) => {
+    assertTrustedEvent(event, trustConfig);
+    const request = parseRegisterBroadcastAssetsRequest(input);
+    const response: RegisterBroadcastAssetsResponse = {
+      requestId: request.requestId,
+      registeredSha256: bridge.registerAssets(request.assets),
+    };
+    return response;
+  });
+
   ipcMain.handle(BROADCAST_PUBLISH_CHANNEL, (event, input: unknown) => {
     assertTrustedEvent(event, trustConfig);
     const request = parsePublishBroadcastSnapshotRequest(input);
     const response: PublishBroadcastSnapshotResponse = {
       requestId: request.requestId,
-      acceptedRevision: bridge.publishSnapshot(request.snapshot),
+      acceptedRevision: bridge.publishSnapshotDescriptor(request.snapshot),
     };
 
     return response;
@@ -235,6 +249,7 @@ app.on('before-quit', (event) => {
     .finally(() => {
       shutdownComplete = true;
       ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
+      ipcMain.removeHandler(BROADCAST_REGISTER_ASSETS_CHANNEL);
       ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
       ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
       removeRegisteredPersistenceHandlers?.();

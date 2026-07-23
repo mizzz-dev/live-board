@@ -68,6 +68,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { AssetPanel } from './AssetPanel';
+import { publishBroadcastSnapshotWithAssets } from './broadcast-ipc';
 import { BroadcastControlPanel } from './BroadcastControlPanel';
 import { CanvasSurfaceV2 } from './CanvasSurfaceV2';
 import { LayerPanel } from './LayerPanel';
@@ -142,6 +143,7 @@ export function AppV2() {
   const [guidesVisible, setGuidesVisible] = useState(true);
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
   const nextBroadcastRevisionRef = useRef(1);
+  const registeredBroadcastAssetHashesRef = useRef(new Set<string>());
   const persistence = useWorkspacePersistence({
     commandState,
     assetLibraries,
@@ -236,9 +238,12 @@ export function AppV2() {
       new Date().toISOString(),
       assetLibrary,
     );
-    void liveBoardApi
-      .publishBroadcastSnapshot(requestId, snapshot)
-      .then((response) => {
+    void publishBroadcastSnapshotWithAssets(
+      liveBoardApi,
+      requestId,
+      snapshot,
+      registeredBroadcastAssetHashesRef.current,
+    ).then((response) => {
         if (active && response.requestId === requestId) {
           setBroadcastRevision(response.acceptedRevision);
           setBroadcastSyncError(false);
