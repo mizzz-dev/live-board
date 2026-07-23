@@ -5,6 +5,7 @@ import {
   parseBroadcastSnapshot as parseBaseBroadcastSnapshot,
   parseObsBridgeClientMessage,
   parsePageTransition,
+  parseRasterDrawing as parseBaseRasterDrawing,
   type BroadcastLayer as BaseBroadcastLayer,
   type BroadcastRasterLayer as BaseBroadcastRasterLayer,
   type BroadcastSnapshot as BaseBroadcastSnapshot,
