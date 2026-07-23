@@ -1,5 +1,6 @@
 import { RichCanvasRenderer, type RenderMetrics } from '@live-board/canvas-engine';
 import {
+  applyBroadcastLayerPatch,
   DEFAULT_BROADCAST_OVERLAY_SETTINGS,
   parseObsBridgeServerMessage,
   type BroadcastOverlayTheme,
@@ -30,6 +31,7 @@ export function App() {
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null);
   const [assetRevision, setAssetRevision] = useState(0);
   const latestRevisionRef = useRef<number | null>(null);
+  const latestSnapshotRef = useRef<BroadcastSnapshot | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<RichCanvasRenderer | null>(null);
   if (rendererRef.current === null) {
@@ -112,44 +114,86 @@ export function App() {
       });
 
       webSocket.addEventListener('message', (event) => {
+        let rawMessage: unknown;
         try {
-          const message = parseObsBridgeServerMessage(
-            JSON.parse(String(event.data)),
-          );
-          if (message.type === 'pong') return;
-
-          const incomingSnapshot = message.snapshot;
-          const currentRevision = latestRevisionRef.current;
-          if (
-            currentRevision !== null &&
-            incomingSnapshot.revision > currentRevision + 1
-          ) {
-            setRevisionGapCount((count) => count + 1);
-            requestLatestSnapshot(currentRevision);
-          }
-          if (
-            currentRevision !== null &&
-            incomingSnapshot.revision <= currentRevision
-          ) {
-            return;
-          }
-
-          latestRevisionRef.current = incomingSnapshot.revision;
-          setLastLatencyMs(
-            Math.max(
-              0,
-              Date.now() - Date.parse(incomingSnapshot.generatedAt),
-            ),
-          );
-          setTransition(
-            message.type === 'page.changed'
-              ? (incomingSnapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS).transition
-              : NO_TRANSITION,
-          );
-          setSnapshot(incomingSnapshot);
+          rawMessage = JSON.parse(String(event.data));
         } catch {
           webSocket?.close(1008, 'Invalid server message');
+          return;
         }
+
+        let message: ReturnType<typeof parseObsBridgeServerMessage>;
+        try {
+          message = parseObsBridgeServerMessage(rawMessage);
+        } catch {
+          if (
+            typeof rawMessage === 'object' &&
+            rawMessage !== null &&
+            'type' in rawMessage &&
+            rawMessage.type === 'layer.patch'
+          ) {
+            setRevisionGapCount((count) => count + 1);
+            requestLatestSnapshot(latestRevisionRef.current);
+            return;
+          }
+          webSocket?.close(1008, 'Invalid server message');
+          return;
+        }
+        if (message.type === 'pong') return;
+
+        const currentRevision = latestRevisionRef.current;
+        let incomingSnapshot: BroadcastSnapshot;
+        if (message.type === 'layer.patch') {
+          const currentSnapshot = latestSnapshotRef.current;
+          if (currentSnapshot === null) {
+            setRevisionGapCount((count) => count + 1);
+            requestLatestSnapshot(currentRevision);
+            return;
+          }
+          try {
+            incomingSnapshot = applyBroadcastLayerPatch(
+              currentSnapshot,
+              message.patch,
+            );
+          } catch {
+            setRevisionGapCount((count) => count + 1);
+            requestLatestSnapshot(currentRevision);
+            return;
+          }
+        } else {
+          incomingSnapshot = message.snapshot;
+        }
+
+        if (
+          currentRevision !== null &&
+          incomingSnapshot.revision > currentRevision + 1 &&
+          message.type === 'layer.patch'
+        ) {
+          setRevisionGapCount((count) => count + 1);
+          requestLatestSnapshot(currentRevision);
+          return;
+        }
+        if (
+          currentRevision !== null &&
+          incomingSnapshot.revision <= currentRevision
+        ) {
+          return;
+        }
+
+        latestRevisionRef.current = incomingSnapshot.revision;
+        latestSnapshotRef.current = incomingSnapshot;
+        setLastLatencyMs(
+          Math.max(
+            0,
+            Date.now() - Date.parse(incomingSnapshot.generatedAt),
+          ),
+        );
+        setTransition(
+          message.type === 'page.changed'
+            ? (incomingSnapshot.overlay ?? DEFAULT_BROADCAST_OVERLAY_SETTINGS).transition
+            : NO_TRANSITION,
+        );
+        setSnapshot(incomingSnapshot);
       });
 
       webSocket.addEventListener('close', () => {

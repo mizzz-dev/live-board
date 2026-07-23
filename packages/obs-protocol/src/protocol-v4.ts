@@ -111,6 +111,18 @@ export interface BroadcastSnapshot extends Omit<BaseBroadcastSnapshot, 'layers'>
   assets?: BroadcastAsset[];
 }
 
+export interface BroadcastLayerPatch {
+  projectId: string;
+  pageId: string;
+  baseRevision: number;
+  revision: number;
+  generatedAt: string;
+  upsertedLayers: BroadcastLayer[];
+  removedLayerIds: string[];
+  layerOrder: string[];
+  assets?: BroadcastAsset[];
+}
+
 export type ObsBridgeServerMessage =
   | { type: 'pong'; timestamp: number }
   | { type: 'snapshot'; snapshot: BroadcastSnapshot }
@@ -119,7 +131,8 @@ export type ObsBridgeServerMessage =
       snapshot: BroadcastSnapshot;
       transition: import('./protocol-v3.js').PageTransition;
     }
-  | { type: 'layer.updated'; snapshot: BroadcastSnapshot };
+  | { type: 'layer.updated'; snapshot: BroadcastSnapshot }
+  | { type: 'layer.patch'; patch: BroadcastLayerPatch };
 
 export function parseBroadcastAsset(input: unknown): BroadcastAsset {
   if (!isRecord(input)) throw new Error('OBS_PROTOCOL_INVALID_ASSET');
@@ -188,6 +201,178 @@ export function isInlineBroadcastAsset(
 
 export function getBroadcastAssetSource(asset: BroadcastAsset): string {
   return isInlineBroadcastAsset(asset) ? asset.dataUrl : asset.url;
+}
+
+export function createBroadcastLayerPatch(
+  previousInput: BroadcastSnapshot,
+  nextInput: BroadcastSnapshot,
+): BroadcastLayerPatch | null {
+  const previous = parseBroadcastSnapshot(previousInput);
+  const next = parseBroadcastSnapshot(nextInput);
+  if (
+    previous.projectId !== next.projectId ||
+    previous.pageId !== next.pageId ||
+    !hasEqualPatchMetadata(previous, next)
+  ) {
+    return null;
+  }
+
+  const previousById = new Map(previous.layers.map((layer) => [layer.id, layer]));
+  const nextIds = new Set(next.layers.map((layer) => layer.id));
+  const upsertedLayers = next.layers.filter((layer) => {
+    const previousLayer = previousById.get(layer.id);
+    return previousLayer === undefined ||
+      JSON.stringify(previousLayer) !== JSON.stringify(layer);
+  });
+  const removedLayerIds = previous.layers
+    .filter((layer) => !nextIds.has(layer.id))
+    .map((layer) => layer.id);
+
+  if (upsertedLayers.length === 0 && removedLayerIds.length === 0) {
+    return null;
+  }
+
+  return {
+    projectId: next.projectId,
+    pageId: next.pageId,
+    baseRevision: previous.revision,
+    revision: next.revision,
+    generatedAt: next.generatedAt,
+    upsertedLayers,
+    removedLayerIds,
+    layerOrder: next.layers.map((layer) => layer.id),
+    ...(next.assets === undefined ? {} : { assets: next.assets }),
+  };
+}
+
+export function parseBroadcastLayerPatch(input: unknown): BroadcastLayerPatch {
+  if (
+    !isRecord(input) ||
+    !isEntityId(input.projectId) ||
+    !isEntityId(input.pageId) ||
+    !isPatchRevision(input.baseRevision) ||
+    !isPatchRevision(input.revision) ||
+    input.revision <= input.baseRevision ||
+    !isPatchTimestamp(input.generatedAt) ||
+    !Array.isArray(input.upsertedLayers) ||
+    input.upsertedLayers.length > 1_000 ||
+    !Array.isArray(input.removedLayerIds) ||
+    input.removedLayerIds.length > 1_000 ||
+    !input.removedLayerIds.every(isEntityId) ||
+    !Array.isArray(input.layerOrder) ||
+    input.layerOrder.length > 1_000 ||
+    !input.layerOrder.every(isEntityId)
+  ) {
+    throw new Error('OBS_PROTOCOL_INVALID_LAYER_PATCH');
+  }
+
+  const upsertedLayers = input.upsertedLayers.map(parseBroadcastLayer);
+  const upsertedIds = new Set<string>();
+  for (const layer of upsertedLayers) {
+    if (upsertedIds.has(layer.id)) {
+      throw new Error('OBS_PROTOCOL_INVALID_LAYER_PATCH');
+    }
+    upsertedIds.add(layer.id);
+  }
+  const removedLayerIds = [...input.removedLayerIds];
+  if (
+    new Set(removedLayerIds).size !== removedLayerIds.length ||
+    removedLayerIds.some((id) => upsertedIds.has(id)) ||
+    new Set(input.layerOrder).size !== input.layerOrder.length
+  ) {
+    throw new Error('OBS_PROTOCOL_INVALID_LAYER_PATCH');
+  }
+
+  const assets =
+    input.assets === undefined ? undefined : parseAssetList(input.assets);
+  return {
+    projectId: input.projectId,
+    pageId: input.pageId,
+    baseRevision: input.baseRevision,
+    revision: input.revision,
+    generatedAt: input.generatedAt,
+    upsertedLayers,
+    removedLayerIds,
+    layerOrder: [...input.layerOrder],
+    ...(assets === undefined ? {} : { assets }),
+  };
+}
+
+export function applyBroadcastLayerPatch(
+  currentInput: BroadcastSnapshot,
+  patchInput: BroadcastLayerPatch,
+): BroadcastSnapshot {
+  const current = parseBroadcastSnapshot(currentInput);
+  const patch = parseBroadcastLayerPatch(patchInput);
+  if (
+    patch.projectId !== current.projectId ||
+    patch.pageId !== current.pageId
+  ) {
+    throw new Error('OBS_PROTOCOL_LAYER_PATCH_PAGE_MISMATCH');
+  }
+  if (patch.baseRevision !== current.revision) {
+    throw new Error('OBS_PROTOCOL_LAYER_PATCH_BASE_REVISION_MISMATCH');
+  }
+
+  const layerById = new Map(current.layers.map((layer) => [layer.id, layer]));
+  for (const removedLayerId of patch.removedLayerIds) {
+    if (!layerById.delete(removedLayerId)) {
+      throw new Error('OBS_PROTOCOL_LAYER_PATCH_REMOVE_NOT_FOUND');
+    }
+  }
+  for (const layer of patch.upsertedLayers) {
+    layerById.set(layer.id, layer);
+  }
+  if (layerById.size !== patch.layerOrder.length) {
+    throw new Error('OBS_PROTOCOL_LAYER_PATCH_ORDER_MISMATCH');
+  }
+  const layers = patch.layerOrder.map((layerId) => {
+    const layer = layerById.get(layerId);
+    if (layer === undefined) {
+      throw new Error('OBS_PROTOCOL_LAYER_PATCH_ORDER_MISMATCH');
+    }
+    return layer;
+  });
+
+  const { assets: _currentAssets, ...currentWithoutAssets } = current;
+  return parseBroadcastSnapshot({
+    ...currentWithoutAssets,
+    revision: patch.revision,
+    generatedAt: patch.generatedAt,
+    layers,
+    ...(patch.assets === undefined ? {} : { assets: patch.assets }),
+  });
+}
+
+function hasEqualPatchMetadata(
+  previous: BroadcastSnapshot,
+  next: BroadcastSnapshot,
+): boolean {
+  return JSON.stringify({
+    schemaVersion: previous.schemaVersion,
+    projectId: previous.projectId,
+    pageId: previous.pageId,
+    pageName: previous.pageName,
+    canvas: previous.canvas,
+    overlay: previous.overlay,
+  }) === JSON.stringify({
+    schemaVersion: next.schemaVersion,
+    projectId: next.projectId,
+    pageId: next.pageId,
+    pageName: next.pageName,
+    canvas: next.canvas,
+    overlay: next.overlay,
+  });
+}
+
+function isPatchRevision(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0;
+}
+
+function isPatchTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 function isHttpAssetUrl(value: string, sha256: string): boolean {
@@ -288,6 +473,9 @@ export function parseObsBridgeServerMessage(
   }
   if (input.type === 'snapshot' || input.type === 'layer.updated') {
     return { type: input.type, snapshot: parseBroadcastSnapshot(input.snapshot) };
+  }
+  if (input.type === 'layer.patch') {
+    return { type: 'layer.patch', patch: parseBroadcastLayerPatch(input.patch) };
   }
   if (input.type === 'page.changed') {
     return {
