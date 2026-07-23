@@ -98,6 +98,14 @@ describe('IPC Asset DTO', () => {
     })).toThrow('OBS_PROTOCOL_INVALID_ASSET_DESCRIPTOR');
   });
 
+  it('登録DTOのdescriptor不正を登録エラーへ正規化する', () => {
+    expect(() => parseBroadcastAssetRegistration({
+      ...descriptor,
+      dataUrl: 'data:image/png;base64,AAAA',
+      bytes,
+    })).toThrow('OBS_PROTOCOL_INVALID_ASSET_REGISTRATION');
+  });
+
   it('byteLength不一致と不正bytesを拒否する', () => {
     expect(() => parseBroadcastAssetRegistration({
       ...descriptor,
