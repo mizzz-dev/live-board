@@ -1,0 +1,158 @@
+name: Windows Package
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-package.yml'
+      - 'apps/desktop/**'
+      - 'apps/overlay/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/windows-package.yml'
+      - 'apps/desktop/**'
+      - 'apps/overlay/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build unsigned Windows artifacts
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: pwsh
+        run: '"path=$(pnpm store path --silent)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append'
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: windows-pnpm-${{ hashFiles('pnpm-lock.yaml', '**/package.json', 'pnpm-workspace.yaml') }}
+          restore-keys: |
+            windows-pnpm-
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron-builder/Cache
+          key: windows-electron-builder-${{ hashFiles('pnpm-lock.yaml', 'apps/desktop/package.json') }}
+          restore-keys: |
+            windows-electron-builder-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NSIS and portable packages
+        run: pnpm package:win
+
+      - name: Run packaged smoke test
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'apps/desktop/release/win-unpacked/LiveBoard.exe'
+          $output = Join-Path $env:RUNNER_TEMP 'live-board-packaged-smoke.json'
+          $process = Start-Process -FilePath $exe -ArgumentList @(
+            '--smoke-test',
+            "--smoke-output=$output"
+          ) -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw 'Packaged smoke test timed out after 60 seconds.'
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged smoke test failed with exit code $($process.ExitCode)."
+          }
+          if (-not (Test-Path $output)) {
+            throw 'Packaged smoke test did not create its result file.'
+          }
+          $result = Get-Content $output -Raw | ConvertFrom-Json
+          if ($result.ok -ne $true -or $result.overlayStatus -ne 200) {
+            throw 'Packaged smoke test result is invalid.'
+          }
+          Get-Content $output
+
+      - name: Create checksums and package manifest
+        shell: pwsh
+        run: |
+          $release = Resolve-Path 'apps/desktop/release'
+          $setup = @(Get-ChildItem $release -Filter 'Live-Board-Setup-*-x64.exe')
+          $portable = @(Get-ChildItem $release -Filter 'Live-Board-Portable-*-x64.exe')
+          if ($setup.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($setup.Count)."
+          }
+          if ($portable.Count -ne 1) {
+            throw "Expected one portable executable, found $($portable.Count)."
+          }
+
+          $artifactFiles = @($setup[0], $portable[0])
+          $checksumLines = foreach ($file in $artifactFiles) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $checksumPath = Join-Path $release 'SHA256SUMS.txt'
+          [System.IO.File]::WriteAllLines($checksumPath, $checksumLines)
+
+          $desktopPackage = Get-Content 'apps/desktop/package.json' -Raw | ConvertFrom-Json
+          $manifest = [ordered]@{
+            productName = 'Live Board'
+            version = $desktopPackage.version
+            commit = '${{ github.sha }}'
+            architecture = 'x64'
+            signed = $false
+            artifacts = @($artifactFiles | ForEach-Object { $_.Name })
+            checksumFile = 'SHA256SUMS.txt'
+            generatedAt = [DateTime]::UtcNow.ToString('o')
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content (
+            Join-Path $release 'package-manifest.json'
+          ) -Encoding utf8
+
+          Get-Content $checksumPath
+          Get-Content (Join-Path $release 'package-manifest.json')
+
+      - name: Upload unsigned Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-board-windows-unsigned-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/release/Live-Board-Setup-*-x64.exe
+            apps/desktop/release/Live-Board-Portable-*-x64.exe
+            apps/desktop/release/SHA256SUMS.txt
+            apps/desktop/release/package-manifest.json
+            apps/desktop/release/builder-effective-config.yaml
