@@ -1,13 +1,16 @@
 import {
   parseBroadcastAssetRegistration,
+  parseBroadcastLayerPatchDescriptor,
   parseBroadcastSnapshotDescriptor,
   type BroadcastAssetRegistration,
+  type BroadcastLayerPatchDescriptor,
   type BroadcastSnapshotDescriptor,
 } from '@live-board/obs-protocol';
 
 export const SECURITY_STATUS_CHANNEL = 'security:get-status';
 export const BROADCAST_REGISTER_ASSETS_CHANNEL = 'broadcast:register-assets';
 export const BROADCAST_PUBLISH_CHANNEL = 'broadcast:publish-snapshot';
+export const BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL = 'broadcast:publish-layer-patch';
 export const OBS_COPY_SOURCE_URL_CHANNEL = 'obs:copy-source-url';
 export const WORKSPACE_SAVE_CHANNEL = 'workspace:save';
 export const WORKSPACE_OPEN_CHANNEL = 'workspace:open';
@@ -61,6 +64,11 @@ export interface PublishBroadcastSnapshotRequest {
 export interface PublishBroadcastSnapshotResponse {
   requestId: string;
   acceptedRevision: number;
+}
+
+export interface PublishBroadcastLayerPatchRequest {
+  requestId: string;
+  patch: BroadcastLayerPatchDescriptor;
 }
 
 export interface CopyObsSourceUrlResponse {
@@ -204,6 +212,18 @@ export function parsePublishBroadcastSnapshotRequest(
   return {
     requestId: parseRequestId(input.requestId),
     snapshot: parseBroadcastSnapshotDescriptor(input.snapshot),
+  };
+}
+
+export function parsePublishBroadcastLayerPatchRequest(
+  input: unknown,
+): PublishBroadcastLayerPatchRequest {
+  if (!isRecord(input)) {
+    throw new Error('IPC_INVALID_REQUEST');
+  }
+  return {
+    requestId: parseRequestId(input.requestId),
+    patch: parseBroadcastLayerPatchDescriptor(input.patch),
   };
 }
 

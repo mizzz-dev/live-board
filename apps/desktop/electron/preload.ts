@@ -1,10 +1,12 @@
 import type {
   BroadcastAssetRegistration,
+  BroadcastLayerPatchDescriptor,
   BroadcastSnapshotDescriptor,
 } from '@live-board/obs-protocol';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   BROADCAST_PUBLISH_CHANNEL,
+  BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL,
   BROADCAST_REGISTER_ASSETS_CHANNEL,
   OBS_COPY_SOURCE_URL_CHANNEL,
   RECOVERY_DISCARD_CHANNEL,
@@ -49,6 +51,10 @@ export interface LiveBoardApi {
   publishBroadcastSnapshot(
     requestId: string,
     snapshot: BroadcastSnapshotDescriptor,
+  ): Promise<PublishBroadcastSnapshotResponse>;
+  publishBroadcastLayerPatch(
+    requestId: string,
+    patch: BroadcastLayerPatchDescriptor,
   ): Promise<PublishBroadcastSnapshotResponse>;
   copyObsSourceUrl(requestId: string): Promise<CopyObsSourceUrlResponse>;
   saveWorkspace(input: {
@@ -120,6 +126,14 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
     ipcRenderer.invoke(BROADCAST_PUBLISH_CHANNEL, {
       requestId,
       snapshot,
+    }) as Promise<PublishBroadcastSnapshotResponse>,
+  publishBroadcastLayerPatch: (
+    requestId: string,
+    patch: BroadcastLayerPatchDescriptor,
+  ): Promise<PublishBroadcastSnapshotResponse> =>
+    ipcRenderer.invoke(BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL, {
+      requestId,
+      patch,
     }) as Promise<PublishBroadcastSnapshotResponse>,
   copyObsSourceUrl: (requestId: string): Promise<CopyObsSourceUrlResponse> =>
     ipcRenderer.invoke(OBS_COPY_SOURCE_URL_CHANNEL, { requestId }) as Promise<CopyObsSourceUrlResponse>,

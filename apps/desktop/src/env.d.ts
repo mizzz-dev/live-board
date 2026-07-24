@@ -107,6 +107,10 @@ interface Window {
       requestId: string,
       snapshot: import('@live-board/obs-protocol').BroadcastSnapshotDescriptor,
     ) => Promise<PublishBroadcastSnapshotResponse>;
+    publishBroadcastLayerPatch: (
+      requestId: string,
+      patch: import('@live-board/obs-protocol').BroadcastLayerPatchDescriptor,
+    ) => Promise<PublishBroadcastSnapshotResponse>;
     copyObsSourceUrl: (requestId: string) => Promise<CopyObsSourceUrlResponse>;
     saveWorkspace: (input: {
       requestId: string;
