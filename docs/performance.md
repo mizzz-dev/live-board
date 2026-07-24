@@ -33,6 +33,7 @@ GitHub ActionsのUbuntu runner、Node.js 22、Vitest 4.1.10で取得した値で
 | 8時間相当revision欠番 | 0件 | 成功 |
 | シミュレーション保持Workspace | 1件 | 旧状態を保持しない |
 | 最大シリアライズWorkspace | 2,432byte | 試験fixture内で安定 |
+| Renderer→Main 100Layer中1Layer更新 | フルSnapshotの10%未満 | 差分IPCの退行防止基準内 |
 
 Domainは13ファイル・57テスト、OBS Bridgeは2ファイル・14テストが成功しました。計測値はrunner負荷で変動するため、個々の値そのものではなく性能予算を継続的に超えないことを品質ゲートにします。
 
@@ -76,6 +77,17 @@ width × height × 4 byte × image count
 
 これは状態遷移の長時間相当試験であり、Electron・OBS・GPU・OSを8時間稼働させる実機試験の代替ではありません。
 
+### 4.5 Renderer→Main Layer差分
+
+- 100Layerを持つsourceなしSnapshotを2世代生成します。
+- 2世代目では1Layerの内容だけを変更します。
+- フルSnapshotと`BroadcastLayerPatchDescriptor`をUTF-8 JSON byteLengthで比較します。
+- patch payloadがフルSnapshot payloadの10%未満であることを確認します。
+- Page、Canvas、Overlay設定変更時はフルSnapshotへフォールバックすることを確認します。
+- Main再起動相当とbase revision不一致時に同revisionのフルSnapshotで復旧することを確認します。
+
+この試験はIPCオブジェクトのJSON表現を比較する退行防止fixtureです。Electron structured cloneの実時間、メモリコピー回数、GC、Windows実機CPUは直接測定していません。
+
 ## 5. 現在の最適化
 
 - 非表示Layerと非表示フォルダー配下をBroadcastSnapshotへ含めない
@@ -85,6 +97,8 @@ width × height × 4 byte × image count
 - ページサムネイルは表示領域付近だけをidle時間に生成
 - サムネイル生成後に元サイズCanvasとRendererキャッシュを解放
 - OBS優先プリセットではページ遷移と装飾効果を無効化
+- Renderer→Mainの画像bytesをSHA-256単位で一回登録
+- Renderer→MainとOBS Bridge→OverlayでLayer DTOの差分／フル自動選択
 
 ## 6. Worker / OffscreenCanvas / WebGL判断
 
@@ -114,5 +128,6 @@ width × height × 4 byte × image count
 - GPUドライバー別のCanvasメモリ解放
 - ウイルス対策ソフト動作中の自動保存
 - スリープ復帰、OBS再接続、ディスプレイ構成変更
+- Renderer→Main Layer patchのstructured clone時間とGCピーク
 
 実機結果は配布候補ビルドごとに記録します。
