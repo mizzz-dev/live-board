@@ -13,7 +13,7 @@
     "package:win:dir": "pnpm build && electron-builder --win dir --x64 --publish never",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test": "pnpm --filter @live-board/obs-protocol build && pnpm --filter @live-board/persistence build && vitest run --passWithNoTests"
+    "test": "pnpm --filter @live-board/obs-protocol build && pnpm --filter @live-board/persistence build && pnpm --filter @live-board/obs-bridge build && vitest run --passWithNoTests"
   },
   "dependencies": {
     "@live-board/canvas-engine": "workspace:*",
