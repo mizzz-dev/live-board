@@ -1,0 +1,37 @@
+name: Apply IPC Layer Patch
+
+on:
+  push:
+    branches:
+      - feat/ipc-layer-patch
+    paths:
+      - .github/workflows/apply-ipc-layer-patch.yml
+      - .github/scripts/apply-ipc-layer-patch.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ipc-layer-patch
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply changes
+        run: node .github/scripts/apply-ipc-layer-patch.mjs
+      - name: Remove temporary files
+        run: rm .github/scripts/apply-ipc-layer-patch.mjs .github/workflows/apply-ipc-layer-patch.yml
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/electron/contracts.ts apps/desktop/electron/main.ts apps/desktop/electron/preload.ts apps/desktop/src/env.d.ts .github
+          git commit -m "RendererとMainのLayer差分IPCを接続"
+          git push origin HEAD:feat/ipc-layer-patch
