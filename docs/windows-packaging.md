@@ -15,10 +15,9 @@ Windows x64向けに次を生成します。
 | `Live-Board-Setup-<version>-x64.exe` | ユーザー単位で導入するNSISインストーラー |
 | `Live-Board-Portable-<version>-x64.exe` | インストールせず検証するポータブル版 |
 | `SHA256SUMS.txt` | 2つのexeの改ざん・転送破損確認 |
-| `package-manifest.json` | version、commit、architecture、署名状態の記録 |
-| `builder-effective-config.yaml` | 実際に適用されたelectron-builder設定の確認 |
+| `package-manifest.json` | version、ソースhead SHA、architecture、署名状態、workflow run IDの記録 |
 
-GitHub Actionsのartifact名は`live-board-windows-unsigned-<commit SHA>`です。保持期間は14日です。
+GitHub Actionsのartifact名は`live-board-windows-unsigned-<source head SHA>`です。Pull Requestでは一時的なmerge refではなく、変更元branchのhead SHAを使用します。保持期間は14日です。
 
 ## 3. パッケージ構成
 
