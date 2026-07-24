@@ -9,6 +9,7 @@ import {
 } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { BroadcastDescriptorPublisher } from './broadcast-publisher.js';
 import {
   BROADCAST_PUBLISH_CHANNEL,
   BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL,
@@ -24,7 +25,14 @@ import {
   type RegisterBroadcastAssetsResponse,
   type SecurityStatus,
 } from './contracts.js';
-import { BroadcastDescriptorPublisher } from './broadcast-publisher.js';
+import {
+  parsePackagedSmokeArguments,
+  resolvePackagedResourcePaths,
+} from './packaged-resources.js';
+import {
+  runPackagedSmokeTest,
+  writePackagedSmokeResult,
+} from './packaged-smoke-test.js';
 import {
   registerPersistenceIpcHandlers,
   removePersistenceIpcHandlers,
@@ -101,6 +109,16 @@ function createTrustConfig(): RendererTrustConfig {
     packagedRendererUrl,
     developmentServerUrl,
   };
+}
+
+function resolveOverlayRoot(): string {
+  if (!app.isPackaged) {
+    return join(currentDirectory, '../../overlay/dist');
+  }
+  return resolvePackagedResourcePaths(
+    currentDirectory,
+    process.resourcesPath,
+  ).overlayRoot;
 }
 
 function assertTrustedEvent(
@@ -204,6 +222,26 @@ function registerIpcHandlers(
 }
 
 async function initializeApplication(): Promise<void> {
+  const smokeArguments = parsePackagedSmokeArguments(process.argv);
+  if (smokeArguments.enabled) {
+    if (!app.isPackaged) {
+      throw new Error('PACKAGED_SMOKE_TEST_REQUIRES_PACKAGED_APP');
+    }
+
+    const result = await runPackagedSmokeTest({
+      currentDirectory,
+      resourcesPath: process.resourcesPath,
+      version: app.getVersion(),
+    });
+    if (smokeArguments.outputPath !== undefined) {
+      await writePackagedSmokeResult(smokeArguments.outputPath, result);
+    }
+    console.log('[Live Board] packaged smoke test passed', result);
+    shutdownComplete = true;
+    app.quit();
+    return;
+  }
+
   const trustConfig = createTrustConfig();
   const rendererEntryUrl =
     developmentServerUrl ?? trustConfig.packagedRendererUrl;
@@ -224,7 +262,7 @@ async function initializeApplication(): Promise<void> {
       developmentServerUrl === undefined
         ? []
         : ['http://127.0.0.1:5174'],
-    overlayRoot: join(currentDirectory, '../../overlay/dist'),
+    overlayRoot: resolveOverlayRoot(),
   });
   registerIpcHandlers(trustConfig, obsBridge);
   removeRegisteredPersistenceHandlers = registerPersistenceIpcHandlers(
@@ -252,6 +290,7 @@ void app
       errorName,
       errorMessage,
     });
+    process.exitCode = 1;
     app.quit();
   });
 

@@ -1,3 +1,8 @@
 packages:
   - apps/*
   - packages/*
+
+# electron-builderのoptional Squirrel.Windows経路から自動解決されるが、
+# 本プロジェクトはNSIS / portableだけを生成するためinstall scriptは実行しない。
+allowBuilds:
+  electron-winstaller: false

@@ -15,7 +15,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:e2e": "playwright test",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "package:win": "pnpm --filter @live-board/desktop package:win",
+    "package:win:dir": "pnpm --filter @live-board/desktop package:win:dir"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
