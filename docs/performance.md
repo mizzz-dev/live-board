@@ -33,7 +33,9 @@ GitHub ActionsのUbuntu runner、Node.js 22、Vitest 4.1.10で取得した値で
 | 8時間相当revision欠番 | 0件 | 成功 |
 | シミュレーション保持Workspace | 1件 | 旧状態を保持しない |
 | 最大シリアライズWorkspace | 2,432byte | 試験fixture内で安定 |
-| Renderer→Main 100Layer中1Layer更新 | フルSnapshotの10%未満 | 差分IPCの退行防止基準内 |
+| Renderer→Main 100LayerフルSnapshot | 48,006byte | 比較元 |
+| Renderer→Main 1Layer更新patch | 1,764byte | フルの3.67% |
+| Renderer→Main payload削減率 | 96.33% | 10%未満の退行防止基準内 |
 
 Domainは13ファイル・57テスト、OBS Bridgeは2ファイル・14テストが成功しました。計測値はrunner負荷で変動するため、個々の値そのものではなく性能予算を継続的に超えないことを品質ゲートにします。
 
@@ -82,6 +84,7 @@ width × height × 4 byte × image count
 - 100Layerを持つsourceなしSnapshotを2世代生成します。
 - 2世代目では1Layerの内容だけを変更します。
 - フルSnapshotと`BroadcastLayerPatchDescriptor`をUTF-8 JSON byteLengthで比較します。
+- fixtureではフル48,006byteに対してpatch 1,764byte、比率3.67%、削減率96.33%です。
 - patch payloadがフルSnapshot payloadの10%未満であることを確認します。
 - Page、Canvas、Overlay設定変更時はフルSnapshotへフォールバックすることを確認します。
 - Main再起動相当とbase revision不一致時に同revisionのフルSnapshotで復旧することを確認します。
