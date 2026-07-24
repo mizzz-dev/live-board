@@ -11,8 +11,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   BROADCAST_PUBLISH_CHANNEL,
+  BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL,
   BROADCAST_REGISTER_ASSETS_CHANNEL,
   OBS_COPY_SOURCE_URL_CHANNEL,
+  parsePublishBroadcastLayerPatchRequest,
   parsePublishBroadcastSnapshotRequest,
   parseRegisterBroadcastAssetsRequest,
   parseSecurityStatusRequest,
@@ -22,6 +24,7 @@ import {
   type RegisterBroadcastAssetsResponse,
   type SecurityStatus,
 } from './contracts.js';
+import { BroadcastDescriptorPublisher } from './broadcast-publisher.js';
 import {
   registerPersistenceIpcHandlers,
   removePersistenceIpcHandlers,
@@ -120,9 +123,12 @@ function registerIpcHandlers(
   trustConfig: RendererTrustConfig,
   bridge: ObsBridge,
 ): void {
+  const publisher = new BroadcastDescriptorPublisher(bridge);
+
   ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
   ipcMain.removeHandler(BROADCAST_REGISTER_ASSETS_CHANNEL);
   ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
+  ipcMain.removeHandler(BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL);
   ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
 
   ipcMain.handle(SECURITY_STATUS_CHANNEL, (event, input: unknown) => {
@@ -161,13 +167,28 @@ function registerIpcHandlers(
   ipcMain.handle(BROADCAST_PUBLISH_CHANNEL, (event, input: unknown) => {
     assertTrustedEvent(event, trustConfig);
     const request = parsePublishBroadcastSnapshotRequest(input);
+    const acceptedRevision = publisher.publishSnapshot(request.snapshot);
     const response: PublishBroadcastSnapshotResponse = {
       requestId: request.requestId,
-      acceptedRevision: bridge.publishSnapshotDescriptor(request.snapshot),
+      acceptedRevision,
     };
 
     return response;
   });
+
+  ipcMain.handle(
+    BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL,
+    (event, input: unknown) => {
+      assertTrustedEvent(event, trustConfig);
+      const request = parsePublishBroadcastLayerPatchRequest(input);
+      const acceptedRevision = publisher.publishLayerPatch(request.patch);
+      const response: PublishBroadcastSnapshotResponse = {
+        requestId: request.requestId,
+        acceptedRevision,
+      };
+      return response;
+    },
+  );
 
   ipcMain.handle(OBS_COPY_SOURCE_URL_CHANNEL, (event, input: unknown) => {
     assertTrustedEvent(event, trustConfig);
@@ -251,6 +272,7 @@ app.on('before-quit', (event) => {
       ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
       ipcMain.removeHandler(BROADCAST_REGISTER_ASSETS_CHANNEL);
       ipcMain.removeHandler(BROADCAST_PUBLISH_CHANNEL);
+      ipcMain.removeHandler(BROADCAST_PUBLISH_LAYER_PATCH_CHANNEL);
       ipcMain.removeHandler(OBS_COPY_SOURCE_URL_CHANNEL);
       removeRegisteredPersistenceHandlers?.();
       removePersistenceIpcHandlers();
