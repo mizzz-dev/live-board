@@ -31,10 +31,15 @@ describe('packaged smoke test', () => {
       version: '0.1.0-test',
       host: '127.0.0.1',
       overlayStatus: 200,
-      rendererIndex: join(root, 'app.asar', 'dist', 'index.html'),
-      overlayRoot: join(root, 'resources', 'overlay', 'dist'),
     });
     expect(result.port).toBeGreaterThan(0);
+    expect(Object.keys(result).sort()).toEqual([
+      'host',
+      'ok',
+      'overlayStatus',
+      'port',
+      'version',
+    ]);
   });
 
   it('RendererまたはOverlayが欠落している場合はBridge起動前に拒否する', async () => {
