@@ -1,9 +1,5 @@
 import { startObsBridge, type ObsBridge } from '@live-board/obs-bridge';
 import {
-  applyBroadcastLayerPatchDescriptor,
-  type BroadcastSnapshotDescriptor,
-} from '@live-board/obs-protocol';
-import {
   app,
   BrowserWindow,
   clipboard,
@@ -28,6 +24,7 @@ import {
   type RegisterBroadcastAssetsResponse,
   type SecurityStatus,
 } from './contracts.js';
+import { BroadcastDescriptorPublisher } from './broadcast-publisher.js';
 import {
   registerPersistenceIpcHandlers,
   removePersistenceIpcHandlers,
@@ -126,7 +123,7 @@ function registerIpcHandlers(
   trustConfig: RendererTrustConfig,
   bridge: ObsBridge,
 ): void {
-  let latestBroadcastSnapshotDescriptor: BroadcastSnapshotDescriptor | undefined;
+  const publisher = new BroadcastDescriptorPublisher(bridge);
 
   ipcMain.removeHandler(SECURITY_STATUS_CHANNEL);
   ipcMain.removeHandler(BROADCAST_REGISTER_ASSETS_CHANNEL);
@@ -170,8 +167,7 @@ function registerIpcHandlers(
   ipcMain.handle(BROADCAST_PUBLISH_CHANNEL, (event, input: unknown) => {
     assertTrustedEvent(event, trustConfig);
     const request = parsePublishBroadcastSnapshotRequest(input);
-    const acceptedRevision = bridge.publishSnapshotDescriptor(request.snapshot);
-    latestBroadcastSnapshotDescriptor = request.snapshot;
+    const acceptedRevision = publisher.publishSnapshot(request.snapshot);
     const response: PublishBroadcastSnapshotResponse = {
       requestId: request.requestId,
       acceptedRevision,
@@ -185,15 +181,7 @@ function registerIpcHandlers(
     (event, input: unknown) => {
       assertTrustedEvent(event, trustConfig);
       const request = parsePublishBroadcastLayerPatchRequest(input);
-      if (latestBroadcastSnapshotDescriptor === undefined) {
-        throw new Error('IPC_BROADCAST_SNAPSHOT_REQUIRED');
-      }
-      const nextSnapshot = applyBroadcastLayerPatchDescriptor(
-        latestBroadcastSnapshotDescriptor,
-        request.patch,
-      );
-      const acceptedRevision = bridge.publishSnapshotDescriptor(nextSnapshot);
-      latestBroadcastSnapshotDescriptor = nextSnapshot;
+      const acceptedRevision = publisher.publishLayerPatch(request.patch);
       const response: PublishBroadcastSnapshotResponse = {
         requestId: request.requestId,
         acceptedRevision,
