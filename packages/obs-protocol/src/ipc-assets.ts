@@ -1,6 +1,10 @@
 import {
+  applyBroadcastLayerPatch,
+  createBroadcastLayerPatch,
   parseBroadcastAsset,
+  parseBroadcastLayerPatch,
   parseBroadcastSnapshot,
+  type BroadcastLayerPatch,
   type BroadcastSnapshot,
   type HttpBroadcastAsset,
   type InlineBroadcastAsset,
@@ -16,6 +20,11 @@ export type BroadcastAssetDescriptor = Omit<
 
 export interface BroadcastSnapshotDescriptor
   extends Omit<BroadcastSnapshot, 'assets'> {
+  assets?: BroadcastAssetDescriptor[];
+}
+
+export interface BroadcastLayerPatchDescriptor
+  extends Omit<BroadcastLayerPatch, 'assets'> {
   assets?: BroadcastAssetDescriptor[];
 }
 
@@ -58,21 +67,12 @@ export function parseBroadcastSnapshotDescriptor(
   }
 
   try {
-    let descriptors: BroadcastAssetDescriptor[] | undefined;
-    if (input.assets !== undefined) {
-      if (!Array.isArray(input.assets)) {
-        throw new Error('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
-      }
-      descriptors = input.assets.map(parseBroadcastAssetDescriptor);
-    }
-
+    const descriptors = parseOptionalDescriptors(input.assets);
     const parsed = parseBroadcastSnapshot({
       ...input,
       ...(descriptors === undefined
         ? {}
-        : {
-            assets: descriptors.map(toSyntheticHttpAsset),
-          }),
+        : { assets: descriptors.map(toSyntheticHttpAsset) }),
     });
     const { assets: _assets, ...snapshotWithoutAssets } = parsed;
     return {
@@ -81,6 +81,31 @@ export function parseBroadcastSnapshotDescriptor(
     };
   } catch {
     throw new Error('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
+  }
+}
+
+export function parseBroadcastLayerPatchDescriptor(
+  input: unknown,
+): BroadcastLayerPatchDescriptor {
+  if (!isRecord(input)) {
+    throw new Error('OBS_PROTOCOL_INVALID_LAYER_PATCH_DESCRIPTOR');
+  }
+
+  try {
+    const descriptors = parseOptionalDescriptors(input.assets);
+    const parsed = parseBroadcastLayerPatch({
+      ...input,
+      ...(descriptors === undefined
+        ? {}
+        : { assets: descriptors.map(toSyntheticHttpAsset) }),
+    });
+    const { assets: _assets, ...patchWithoutAssets } = parsed;
+    return {
+      ...patchWithoutAssets,
+      ...(descriptors === undefined ? {} : { assets: descriptors }),
+    };
+  } catch {
+    throw new Error('OBS_PROTOCOL_INVALID_LAYER_PATCH_DESCRIPTOR');
   }
 }
 
@@ -117,6 +142,77 @@ export function toBroadcastSnapshotDescriptor(
       ? {}
       : { assets: assets.map(stripAssetSource) }),
   };
+}
+
+export function createBroadcastLayerPatchDescriptor(
+  previousInput: BroadcastSnapshotDescriptor,
+  nextInput: BroadcastSnapshotDescriptor,
+): BroadcastLayerPatchDescriptor | null {
+  const previous = parseBroadcastSnapshotDescriptor(previousInput);
+  const next = parseBroadcastSnapshotDescriptor(nextInput);
+  const patch = createBroadcastLayerPatch(
+    toSyntheticBroadcastSnapshot(previous),
+    toSyntheticBroadcastSnapshot(next),
+  );
+  if (patch === null) return null;
+  return toBroadcastLayerPatchDescriptor(patch);
+}
+
+export function applyBroadcastLayerPatchDescriptor(
+  currentInput: BroadcastSnapshotDescriptor,
+  patchInput: BroadcastLayerPatchDescriptor,
+): BroadcastSnapshotDescriptor {
+  const current = parseBroadcastSnapshotDescriptor(currentInput);
+  const patch = parseBroadcastLayerPatchDescriptor(patchInput);
+  const applied = applyBroadcastLayerPatch(
+    toSyntheticBroadcastSnapshot(current),
+    toSyntheticBroadcastLayerPatch(patch),
+  );
+  return toBroadcastSnapshotDescriptor(applied);
+}
+
+function parseOptionalDescriptors(
+  input: unknown,
+): BroadcastAssetDescriptor[] | undefined {
+  if (input === undefined) return undefined;
+  if (!Array.isArray(input)) {
+    throw new Error('OBS_PROTOCOL_INVALID_ASSET_DESCRIPTOR_LIST');
+  }
+  return input.map(parseBroadcastAssetDescriptor);
+}
+
+function toBroadcastLayerPatchDescriptor(
+  patch: BroadcastLayerPatch,
+): BroadcastLayerPatchDescriptor {
+  const { assets, ...patchWithoutAssets } = patch;
+  return {
+    ...patchWithoutAssets,
+    ...(assets === undefined
+      ? {}
+      : { assets: assets.map(stripAssetSource) }),
+  };
+}
+
+function toSyntheticBroadcastSnapshot(
+  snapshot: BroadcastSnapshotDescriptor,
+): BroadcastSnapshot {
+  return parseBroadcastSnapshot({
+    ...snapshot,
+    ...(snapshot.assets === undefined
+      ? {}
+      : { assets: snapshot.assets.map(toSyntheticHttpAsset) }),
+  });
+}
+
+function toSyntheticBroadcastLayerPatch(
+  patch: BroadcastLayerPatchDescriptor,
+): BroadcastLayerPatch {
+  return parseBroadcastLayerPatch({
+    ...patch,
+    ...(patch.assets === undefined
+      ? {}
+      : { assets: patch.assets.map(toSyntheticHttpAsset) }),
+  });
 }
 
 function stripAssetSource(
