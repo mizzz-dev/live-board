@@ -178,6 +178,11 @@ describe('Renderer→Main Layer patch', () => {
     const fullBytes = new TextEncoder().encode(
       JSON.stringify({ type: 'snapshot', snapshot: next }),
     ).byteLength;
+    console.info('IPC layer patch payload metric', {
+      fullBytes,
+      patchBytes,
+      ratio: patchBytes / fullBytes,
+    });
     expect(patchBytes).toBeLessThan(fullBytes * 0.1);
   });
 });
