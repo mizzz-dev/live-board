@@ -86,13 +86,11 @@ LiveBoard.exe --smoke-test --smoke-output=C:\temp\live-board-smoke.json
   "version": "0.1.0",
   "host": "127.0.0.1",
   "port": 49152,
-  "overlayStatus": 200,
-  "rendererIndex": "...",
-  "overlayRoot": "..."
+  "overlayStatus": 200
 }
 ```
 
-接続tokenやユーザーのファイルパスは結果へ含めません。
+接続token、Workspaceパス、インストール先、runner固有パスは結果へ含めません。
 
 ## 6. GitHub Actions
 
