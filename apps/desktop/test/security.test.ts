@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   parsePublishBroadcastSnapshotRequest,
+  parseRegisterBroadcastAssetsRequest,
   parseSecurityStatusRequest,
 } from '../electron/contracts.js';
 import {
@@ -39,6 +41,18 @@ const snapshot = {
     customCssFallback: false,
   },
   layers: [],
+};
+
+const assetBytes = Buffer.from('ipc-contract-asset');
+const asset = {
+  id: 'asset:ipc-contract',
+  sha256: createHash('sha256').update(assetBytes).digest('hex'),
+  mime: 'image/png' as const,
+  width: 1,
+  height: 1,
+  byteLength: assetBytes.byteLength,
+  animated: false as const,
+  sanitized: false,
 };
 
 describe('Electron security boundary', () => {
@@ -134,7 +148,7 @@ describe('IPC request parser', () => {
     });
   });
 
-  it('BroadcastSnapshotを実行時検証する', () => {
+  it('sourceなしBroadcastSnapshot descriptorを実行時検証する', () => {
     expect(
       parsePublishBroadcastSnapshotRequest({
         requestId: 'publish_1',
@@ -147,7 +161,40 @@ describe('IPC request parser', () => {
         requestId: 'publish_1',
         snapshot: { ...snapshot, revision: -1 },
       }),
-    ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT');
+    ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
+  });
+
+  it('Asset bytes登録要求を複製して検証する', () => {
+    const result = parseRegisterBroadcastAssetsRequest({
+      requestId: 'register_1',
+      assets: [{ ...asset, bytes: assetBytes }],
+    });
+
+    expect(result.requestId).toBe('register_1');
+    expect(result.assets[0]).toMatchObject(asset);
+    expect(Buffer.from(result.assets[0]!.bytes)).toEqual(assetBytes);
+    expect(result.assets[0]!.bytes).not.toBe(assetBytes);
+  });
+
+  it('publish descriptorへのsource混入と登録byteLength不一致を拒否する', () => {
+    expect(() =>
+      parsePublishBroadcastSnapshotRequest({
+        requestId: 'publish_1',
+        snapshot: {
+          ...snapshot,
+          assets: [{
+            ...asset,
+            dataUrl: 'data:image/png;base64,AAAA',
+          }],
+        },
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_SNAPSHOT_DESCRIPTOR');
+    expect(() =>
+      parseRegisterBroadcastAssetsRequest({
+        requestId: 'register_1',
+        assets: [{ ...asset, bytes: new Uint8Array(1) }],
+      }),
+    ).toThrow('OBS_PROTOCOL_INVALID_ASSET_REGISTRATION');
   });
 
   it('空文字・過長・記号・非objectを拒否する', () => {

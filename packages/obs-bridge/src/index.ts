@@ -1,9 +1,12 @@
 import {
   createBroadcastLayerPatch,
   parseBroadcastSnapshot,
+  parseBroadcastSnapshotDescriptor,
   parseObsBridgeClientMessage,
   parsePageTransition,
+  type BroadcastAssetRegistration,
   type BroadcastSnapshot,
+  type BroadcastSnapshotDescriptor,
   type ObsBridgeClientMessage,
   type ObsBridgeServerMessage,
   type PageTransition,
@@ -61,12 +64,16 @@ export interface ObsBridge {
   getConnectionCount(): number;
   getLatestRevision(): number | null;
   getAssetStats(): BroadcastAssetRegistryStats;
+  registerAssets(assets: readonly BroadcastAssetRegistration[]): string[];
   publishSnapshot(snapshot: BroadcastSnapshot): number;
+  publishSnapshotDescriptor(snapshot: BroadcastSnapshotDescriptor): number;
   close(): Promise<void>;
 }
 
 export {
+  type BroadcastAssetRegistration,
   type BroadcastSnapshot,
+  type BroadcastSnapshotDescriptor,
   type ObsBridgeClientMessage,
   type PageTransition,
 };
@@ -264,31 +271,43 @@ export async function startObsBridge(
     webSocketUrl: `ws://${formattedHost}:${resolvedPort}/ws?token=${token}`,
   });
 
+  const assertFreshRevision = (revision: number): void => {
+    if (latestSnapshot !== undefined && revision <= latestSnapshot.revision) {
+      throw new Error('OBS_BRIDGE_STALE_REVISION');
+    }
+  };
+  const publishPreparedSnapshot = (snapshot: BroadcastSnapshot): number => {
+    const message = createSnapshotMessage(
+      latestSnapshot,
+      snapshot,
+      pageTransition,
+    );
+    latestSnapshot = snapshot;
+    for (const client of webSocketServer.clients) {
+      if (client.readyState === 1) sendServerMessage(client, message);
+    }
+    return snapshot.revision;
+  };
+
   return {
     info,
     getConnectionCount: () => webSocketServer.clients.size,
     getLatestRevision: () => latestSnapshot?.revision ?? null,
     getAssetStats: () => assetRegistry.getStats(),
+    registerAssets: (input) => assetRegistry.registerAssets(input),
     publishSnapshot: (input) => {
       const parsedSnapshot = parseBroadcastSnapshot(input);
-      if (
-        latestSnapshot !== undefined &&
-        parsedSnapshot.revision <= latestSnapshot.revision
-      ) {
-        throw new Error('OBS_BRIDGE_STALE_REVISION');
-      }
-      const snapshot = assetRegistry.prepareSnapshot(parsedSnapshot, token);
-
-      const message = createSnapshotMessage(
-        latestSnapshot,
-        snapshot,
-        pageTransition,
+      assertFreshRevision(parsedSnapshot.revision);
+      return publishPreparedSnapshot(
+        assetRegistry.prepareSnapshot(parsedSnapshot, token),
       );
-      latestSnapshot = snapshot;
-      for (const client of webSocketServer.clients) {
-        if (client.readyState === 1) sendServerMessage(client, message);
-      }
-      return snapshot.revision;
+    },
+    publishSnapshotDescriptor: (input) => {
+      const parsedSnapshot = parseBroadcastSnapshotDescriptor(input);
+      assertFreshRevision(parsedSnapshot.revision);
+      return publishPreparedSnapshot(
+        assetRegistry.prepareSnapshotDescriptor(parsedSnapshot, token),
+      );
     },
     close: async () => {
       assetRegistry.clear();

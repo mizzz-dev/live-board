@@ -1,7 +1,11 @@
-import type { BroadcastSnapshot } from '@live-board/obs-protocol';
+import type {
+  BroadcastAssetRegistration,
+  BroadcastSnapshotDescriptor,
+} from '@live-board/obs-protocol';
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   BROADCAST_PUBLISH_CHANNEL,
+  BROADCAST_REGISTER_ASSETS_CHANNEL,
   OBS_COPY_SOURCE_URL_CHANNEL,
   RECOVERY_DISCARD_CHANNEL,
   RECOVERY_LIST_CHANNEL,
@@ -16,6 +20,7 @@ import {
   WORKSPACE_SET_FAVORITE_CHANNEL,
   type CopyObsSourceUrlResponse,
   type PublishBroadcastSnapshotResponse,
+  type RegisterBroadcastAssetsResponse,
   type RecoveryListResponse,
   type RecoveryLoadResponse,
   type SecurityStatus,
@@ -37,9 +42,13 @@ export interface RuntimeInfo {
 export interface LiveBoardApi {
   getRuntimeInfo(): RuntimeInfo;
   getSecurityStatus(requestId: string): Promise<SecurityStatus>;
+  registerBroadcastAssets(
+    requestId: string,
+    assets: BroadcastAssetRegistration[],
+  ): Promise<RegisterBroadcastAssetsResponse>;
   publishBroadcastSnapshot(
     requestId: string,
-    snapshot: BroadcastSnapshot,
+    snapshot: BroadcastSnapshotDescriptor,
   ): Promise<PublishBroadcastSnapshotResponse>;
   copyObsSourceUrl(requestId: string): Promise<CopyObsSourceUrlResponse>;
   saveWorkspace(input: {
@@ -96,9 +105,17 @@ const liveBoardApi: LiveBoardApi = Object.freeze({
   getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
   getSecurityStatus: (requestId: string): Promise<SecurityStatus> =>
     ipcRenderer.invoke(SECURITY_STATUS_CHANNEL, { requestId }) as Promise<SecurityStatus>,
+  registerBroadcastAssets: (
+    requestId: string,
+    assets: BroadcastAssetRegistration[],
+  ): Promise<RegisterBroadcastAssetsResponse> =>
+    ipcRenderer.invoke(BROADCAST_REGISTER_ASSETS_CHANNEL, {
+      requestId,
+      assets,
+    }) as Promise<RegisterBroadcastAssetsResponse>,
   publishBroadcastSnapshot: (
     requestId: string,
-    snapshot: BroadcastSnapshot,
+    snapshot: BroadcastSnapshotDescriptor,
   ): Promise<PublishBroadcastSnapshotResponse> =>
     ipcRenderer.invoke(BROADCAST_PUBLISH_CHANNEL, {
       requestId,

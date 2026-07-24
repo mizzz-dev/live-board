@@ -25,6 +25,11 @@ interface SecurityStatus {
   };
 }
 
+interface RegisterBroadcastAssetsResponse {
+  requestId: string;
+  registeredSha256: string[];
+}
+
 interface PublishBroadcastSnapshotResponse {
   requestId: string;
   acceptedRevision: number;
@@ -94,9 +99,13 @@ interface Window {
   liveBoard?: {
     getRuntimeInfo: () => RuntimeInfo;
     getSecurityStatus: (requestId: string) => Promise<SecurityStatus>;
+    registerBroadcastAssets: (
+      requestId: string,
+      assets: import('@live-board/obs-protocol').BroadcastAssetRegistration[],
+    ) => Promise<RegisterBroadcastAssetsResponse>;
     publishBroadcastSnapshot: (
       requestId: string,
-      snapshot: import('@live-board/obs-protocol').BroadcastSnapshot,
+      snapshot: import('@live-board/obs-protocol').BroadcastSnapshotDescriptor,
     ) => Promise<PublishBroadcastSnapshotResponse>;
     copyObsSourceUrl: (requestId: string) => Promise<CopyObsSourceUrlResponse>;
     saveWorkspace: (input: {
