@@ -1,0 +1,37 @@
+name: Finalize IPC Layer Patch Docs
+
+on:
+  push:
+    branches:
+      - feat/ipc-layer-patch
+    paths:
+      - .github/workflows/finalize-ipc-layer-patch-docs.yml
+      - .github/scripts/finalize-ipc-layer-patch-docs.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ipc-layer-patch
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply changes
+        run: node .github/scripts/finalize-ipc-layer-patch-docs.mjs
+      - name: Remove temporary files
+        run: rm .github/scripts/finalize-ipc-layer-patch-docs.mjs .github/workflows/finalize-ipc-layer-patch-docs.yml
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md apps/desktop/test/broadcast-ipc-layer-patch.test.ts .github
+          git commit -m "Layer差分IPCのREADMEと性能計測を更新"
+          git push origin HEAD:feat/ipc-layer-patch
