@@ -14,8 +14,6 @@ export interface PackagedSmokeTestResult {
   host: '127.0.0.1' | '::1';
   port: number;
   overlayStatus: number;
-  rendererIndex: string;
-  overlayRoot: string;
 }
 
 export interface RunPackagedSmokeTestOptions {
@@ -64,8 +62,6 @@ export async function runPackagedSmokeTest(
       host: bridge.info.host,
       port: bridge.info.port,
       overlayStatus: response.status,
-      rendererIndex: paths.rendererIndex,
-      overlayRoot: paths.overlayRoot,
     };
   } finally {
     await bridge.close();
