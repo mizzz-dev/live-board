@@ -1,0 +1,23 @@
+exit_code=1
+Scope: all 9 workspace projects
+? Verifying lockfile against supply-chain policies (446 entries)...
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +411
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 411, reused 0, downloaded 0, added 0
+Progress: resolved 411, reused 0, downloaded 179, added 12
+Progress: resolved 411, reused 0, downloaded 411, added 100
+✓ Lockfile passes supply-chain policies (446 entries in 3.8s)
+Progress: resolved 411, reused 0, downloaded 411, added 411, done
+
+devDependencies:
++ @eslint/js 9.39.5
++ @playwright/test 1.61.1
++ eslint 9.39.5
++ typescript 6.0.3
++ typescript-eslint 8.65.0
+
+[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: electron-winstaller@5.4.0
+
+Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.
